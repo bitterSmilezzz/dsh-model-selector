@@ -1,0 +1,10 @@
+# dsh-model-selector — 增强模型选择器（独立插件包）
+#
+# 纯 UI 插件：host 半区为空 apply（占位，让插件出现在 Loader 与浏览器 roster），
+# 实际逻辑全部在 client 半区（conversation.input.model seat 覆盖）。
+# 无设置 namespace / 无设置卡片。
+
+- insert:
+    - id: dsh-model-selector
+      name: dsh-model-selector
+      inject: []
