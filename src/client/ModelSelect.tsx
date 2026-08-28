@@ -46,27 +46,21 @@ interface EffortSliderProps {
 }
 
 
-function IconChevronDown() {
-	return (
-		<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-			<path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor" />
-		</svg>
-	);
-}
-function IconCheck() {
-	return (
-		<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-			<path d="M11.5635 4.58984L7.61426 9.07715C7.35154 9.37561 7.11346 9.64812 6.89453 9.84668C6.66593 10.054 6.38519 10.2506 6.01465 10.3164C5.82079 10.3508 5.62207 10.3529 5.42773 10.3213C5.0561 10.2609 4.77266 10.0674 4.54102 9.86328C4.31926 9.66791 4.07752 9.39911 3.81055 9.10449L2.44531 7.59863L3.55664 6.59082L4.92188 8.09766C5.21256 8.41844 5.38878 8.61191 5.53223 8.73828C5.61022 8.80699 5.65253 8.83192 5.66895 8.83984C5.69648 8.84429 5.72449 8.84467 5.75195 8.83984C5.72657 8.84451 5.75564 8.85422 5.88672 8.73535C6.02833 8.60692 6.20225 8.41088 6.48828 8.08594L10.4385 3.59961L11.5635 4.58984Z" fill="currentColor" />
-		</svg>
-	);
-}
-function IconClear() {
-	return (
-		<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-			<path d="M10.6074 4.40278L8.00975 6.99973L10.6074 9.59739L9.59736 10.6074L6.9997 8.00978L4.40274 10.6074L3.3927 9.59739L5.98966 6.99973L3.3927 4.40278L4.40274 3.39273L6.9997 5.98969L9.59736 3.39273L10.6074 4.40278Z" fill="currentColor" />
-		</svg>
-	);
-}
+const IconChevronDown = (
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+		<path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor" />
+	</svg>
+);
+const IconCheck = (
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+		<path d="M11.5635 4.58984L7.61426 9.07715C7.35154 9.37561 7.11346 9.64812 6.89453 9.84668C6.66593 10.054 6.38519 10.2506 6.01465 10.3164C5.82079 10.3508 5.62207 10.3529 5.42773 10.3213C5.0561 10.2609 4.77266 10.0674 4.54102 9.86328C4.31926 9.66791 4.07752 9.39911 3.81055 9.10449L2.44531 7.59863L3.55664 6.59082L4.92188 8.09766C5.21256 8.41844 5.38878 8.61191 5.53223 8.73828C5.61022 8.80699 5.65253 8.83192 5.66895 8.83984C5.69648 8.84429 5.72449 8.84467 5.75195 8.83984C5.72657 8.84451 5.75564 8.85422 5.88672 8.73535C6.02833 8.60692 6.20225 8.41088 6.48828 8.08594L10.4385 3.59961L11.5635 4.58984Z" fill="currentColor" />
+	</svg>
+);
+const IconClear = (
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+		<path d="M10.6074 4.40278L8.00975 6.99973L10.6074 9.59739L9.59736 10.6074L6.9997 8.00978L4.40274 10.6074L3.3927 9.59739L5.98966 6.99973L3.3927 4.40278L4.40274 3.39273L6.9997 5.98969L9.59736 3.39273L10.6074 4.40278Z" fill="currentColor" />
+	</svg>
+);
 /** Canonical strength order of pi-ai thinking levels (strongest = highest). */
 const EFFORT_RANK = {
 	off: 0,
@@ -722,7 +716,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					{showProvider && <span className="dms-model-option-provider">{group.name}</span>}
 				</span>
 				<span className="dms-model-check">
-					{selected ? <IconCheck /> : null}
+					{selected ? IconCheck : null}
 				</span>
 			</button>
 		);
@@ -765,7 +759,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				{providerLabel !== undefined && <span className="dms-triggerProvider">{providerLabel}</span>}
 				{effortLabel !== undefined && <span className="dms-triggerEffort">{effortLabel}</span>}
 				<span className={`dms-chevron${open ? " dms-chevronOpen" : ""}`}>
-					<IconChevronDown />
+					{IconChevronDown}
 				</span>
 			</button>
 			{open ? (
@@ -801,7 +795,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 									searchRef.current?.focus();
 								}}
 							>
-								<IconClear />
+								{IconClear}
 							</button>
 						)}
 					</div>
@@ -829,7 +823,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 											onClick={() => toggleCollapse(group.id)}
 										>
 											<span className={`dms-groupChevron${isCollapsed ? ' dms-groupChevronClosed' : ''}`}>
-												<IconChevronDown />
+												{IconChevronDown}
 											</span>
 											<span className="dms-groupName">{group.name}</span>
 											<span className="dms-groupCount">{group.models.length}</span>
