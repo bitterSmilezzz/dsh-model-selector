@@ -198,7 +198,7 @@ export const CSS = `
 }
 .dms-searchClear:hover { color: var(--dsw-alias-label-primary); }
 
-.dms-groups { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.dms-groups { flex: 1 1 auto; min-height: 0; overflow-y: auto; contain: content; }
 .dms-group + .dms-group { margin-top: 4px; }
 
 /* Collapsible provider header: a full-width toggle button. */
