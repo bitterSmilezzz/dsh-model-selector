@@ -26,7 +26,8 @@ dsh plugin --profile <profile> add <path-to-repo>
 ## 外部依赖
 
 - macOS / Windows / Linux 通用，无系统级依赖。
-- 运行时依赖 DSH web profile（client 半区），需要 `@deepseek-ai/dsh-client-runtime` 等官方注入包（见 package.json peerDependencies）。
+- 运行时依赖 DSH web profile（client 半区），需要 `@deepseek-ai/dsh-client-ui-slots` 等官方注入包（见 package.json peerDependencies）。
+- 生命周期脚本：**无**（无 preinstall/install/postinstall/prepare）。
 
 ## 权限
 

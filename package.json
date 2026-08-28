@@ -55,6 +55,13 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
+    "searchTerms": [
+      "模型选择",
+      "模型",
+      "推理强度",
+      "effort",
+      "model selector"
+    ],
     "client": {
       "platform": "web",
       "inject": [
