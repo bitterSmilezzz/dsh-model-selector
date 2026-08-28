@@ -8,7 +8,8 @@
  * `single`, so a registration at a LOWER priority than the shipped occupant
  * (default 0) becomes the rendered winner.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ui-conversation SlotMap merge (the input model seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -23,12 +24,14 @@ import { CSS } from './styles.ts'
 /** Dictionary namespace owned by this plugin. */
 const NS = 'modelSelector'
 
-/** Required services: the registry, session lookup, locale, and the slot seat. */
+/** Required services: the registry, session lookup, locale, the slot seat, and the model directory's Remote faces. */
 export const inject = [
   'slots',
   'sessions',
   'locale',
   'modelDirectories',
+  'remote',
+  'remote.session',
 ]
 
 /**

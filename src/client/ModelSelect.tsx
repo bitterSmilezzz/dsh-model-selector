@@ -21,7 +21,7 @@ export { zhDict, enDict }
 // data contract — same shared per-session directory the /model popup reads).
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Type-only: the connection carrier types (model catalog shapes).
 import type { ModelReasoning, ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-client-connection/client'
 
