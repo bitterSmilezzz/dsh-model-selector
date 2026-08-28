@@ -112,6 +112,15 @@ export const CSS = `
   line-height: 20px;
 }
 
+.dms-more {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l1, transparent);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 /* Provider-load failure strip: capped and scrollable so a long list of failed
    groups can never squeeze the model list out of the menu (E4). */
 .dms-failures {

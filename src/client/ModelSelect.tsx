@@ -30,6 +30,14 @@ type EffortLevel = ModelReasoning['efforts'][number]
 /** Per-session model directory snapshot (official state shape). */
 type DirectoryState = ModelDirectoryState
 /** The enhanced seat's injected business face. */
+/** 搜索索引条目：模型 + 其搜索 haystack + 选中载荷。 */
+type ModelChoice = {
+	group: ModelProviderGroup
+	model: ModelProviderGroup["models"][number]
+	haystack: string
+	selection: ModelSelection
+}
+
 interface EffortSliderProps {
   state: DirectoryState
   directory: unknown
@@ -87,6 +95,8 @@ function maxEffortOf(reasoning: ModelReasoning): string | undefined {
 * so reopening the menu within this window costs zero RPC and zero re-render.
 */
 const DIRECTORY_STALE_MS = 3e4;
+/** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。 */
+const MAX_VISIBLE_HITS = 100;
 // ── 推理强度滑块（移植自 dsh-reasoning-effort：辐射特效 + 档位随模型自动适配）──
 function dmsEffortIndex(levels: EffortLevel[], id: string | undefined): number {
 	return levels.findIndex((level) => level.id === id);
@@ -530,17 +540,28 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const searchRef = react.useRef<HTMLInputElement | null>(null);
 	const itemRefs = react.useRef<(HTMLButtonElement | null)[]>([]);
 	const lastLoadRef = react.useRef(0);
+	const lastGroupsKeyRef = react.useRef<readonly ModelProviderGroup[] | null>(null);
+	const choicesCacheRef = react.useRef<ModelChoice[]>([]);
 	const id = react.useId();
-	const choices = react.useMemo(() => state.groups.flatMap((group) => group.models.map((model) => ({
-		group,
-		model,
-		haystack: `${model.name}\n${model.description ?? ""}\n${group.name}\n${model.id}\n${group.id}`.toLowerCase(),
-		selection: {
-			provider: group.id,
-			model: model.id,
-			...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
+	// 模型目录稳定时，haystack 索引不随 select/状态抖动重建：仅在 groups 引用
+	// 真正变化（新 load 结果）时重建 400+ 条搜索索引。
+	{
+		const groupsKey = state.groups;
+		if (lastGroupsKeyRef.current !== groupsKey) {
+			lastGroupsKeyRef.current = groupsKey;
+			choicesCacheRef.current = groupsKey.flatMap((group) => group.models.map((model) => ({
+				group,
+				model,
+				haystack: `${model.name}\n${model.description ?? ""}\n${group.name}\n${model.id}\n${group.id}`.toLowerCase(),
+				selection: {
+					provider: group.id,
+					model: model.id,
+					...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
+				}
+			})));
 		}
-	}))), [state.groups]);
+	}
+	const choices = choicesCacheRef.current;
 	const currentChoice = choices[react.useMemo(() => state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model), [choices, state.current])];
 	const reasoning = currentChoice?.model.reasoning;
 	const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
@@ -788,7 +809,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 						{hits !== null
 							? hits.length === 0
 								? <div className="dms-empty">{t('search.noMatch', { query: query.trim() })}</div>
-								: hits.map((hit) => renderModelOption(hit.group, hit.model, true))
+								: <>
+									{hits.slice(0, MAX_VISIBLE_HITS).map((hit) => renderModelOption(hit.group, hit.model, true))}
+									{hits.length > MAX_VISIBLE_HITS && (
+										<div className="dms-more">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.length) })}</div>
+									)}
+								</>
 							: state.groups.map((group) => {
 								const headingId = `${id}-${group.id}`;
 								const isCollapsed = collapsed.has(group.id);
