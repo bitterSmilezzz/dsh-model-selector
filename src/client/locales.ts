@@ -25,6 +25,7 @@ export const zh = {
 "empty.efforts": "当前模型未提供推理等级。",
 "effort.failed": "档位切换未生效（后端未接受），已恢复原档位",
 "notice.already": "已是当前模型，无需切换",
+"notice.selectFailed": "切换失败，请重试",
 "notice.alreadyEffort": "已是当前推理等级",
 "badge.reasoning": "推理",
 "badge.reasoningHint": "支持思考等级，切换后自动选到最大思考强度"
@@ -52,6 +53,7 @@ export const en = {
 	"empty.efforts": "This model provides no reasoning effort levels.",
 	"effort.failed": "Failed to switch effort (backend rejected); restored",
 	"notice.already": "Already the current model",
+"notice.selectFailed": "Switch failed, please try again",
 	"notice.alreadyEffort": "Already the current effort",
 	"badge.reasoning": "Reasoning",
 	"badge.reasoningHint": "Supports reasoning levels; switches land on the strongest"

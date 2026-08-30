@@ -226,7 +226,7 @@ export function EffortSlider({ state, directory, select, t }: EffortSliderProps)
 		setEffort(next);
 		setPreview(index);
 		setLocalError(null);
-	}, [available, levels.length, state.current?.provider, state.current?.model]);
+	}, [available, levels.length, state.current?.provider, state.current?.model, state.current?.reasoningEffort]);
 	react.useEffect(() => {
 		previewRef.current = preview;
 		radiationRef.current.target = levels.length >= 2 ? preview / (levels.length - 1) : 0.5;
@@ -578,7 +578,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	};
 	react.useEffect(() => {
 		if (available) {
+			// 目录新鲜度守卫：inject 重跑会重建 load 引用触发本 effect，30s 内已有
+			// 有效目录时不重复全量 load（show() 打开路径已有同款守卫）。
+			if (Date.now() - lastLoadRef.current < DIRECTORY_STALE_MS && state.status === "ready" && state.groups.length > 0) return;
 			lastActionRef.current = "load";
+			lastLoadRef.current = Date.now();
 			load();
 		}
 	}, [available, load]);
@@ -638,9 +642,22 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			return;
 		}
 		if (!open) return;
-		if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !(event.target instanceof HTMLInputElement)) {
+		const target = event.target;
+		const fromSearch = target instanceof HTMLInputElement && target === searchRef.current;
+		if ((event.key === "ArrowDown" || event.key === "ArrowUp") && (!(target instanceof HTMLInputElement) || fromSearch)) {
+			// 搜索框自动聚焦后箭头原本只在输入框内移光标（键盘导航死路）；现在
+			// 搜索框内方向键也进入结果列表（effort 滑杆的 range input 不受影响）。
 			event.preventDefault();
 			moveFocus(event.key === "ArrowDown" ? 1 : -1);
+			return;
+		}
+		if (event.key === "Enter" && !(target instanceof HTMLButtonElement)) {
+			// 搜索框（或其他非按钮焦点）回车 = 选中第一个搜索命中；无查询/无命中不动作。
+			if (hits !== null && hits.length > 0) {
+				event.preventDefault();
+				const first = hits[0]!;
+				choose({ provider: first.group.id, model: first.model.id });
+			}
 		}
 	};
 	const onBlur = (event: react.FocusEvent<HTMLDivElement>): void => {
@@ -651,6 +668,8 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			close();
 			return;
 		}
+		// relatedTarget 为 null（窗口失焦 alt-tab / 焦点落到不可聚焦区域）也收起菜单。
+		close();
 	};
 	const choose = (selection: ModelSelection): void => {
 		if (state.current?.provider === selection.provider && state.current.model === selection.model) {
@@ -668,6 +687,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		lastActionRef.current = "select";
 		select(full).then((accepted) => {
 			if (accepted && rootRef.current !== null) close(true);
+			else if (!accepted) setNotice(t("notice.selectFailed"));
 		});
 	};
 	const toggleCollapse = (groupId: string): void => {
