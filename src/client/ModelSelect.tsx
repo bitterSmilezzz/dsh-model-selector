@@ -22,11 +22,11 @@ export { zhDict, enDict }
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+// Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
+import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsSliderLevels, maxEffortOf } from './effort.ts'
 // Type-only: the model catalog carrier types (moved here in dsh alpha.2).
-import type { ModelReasoning, ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
 
-/** One model effort level as advertised by the adapter. */
-type EffortLevel = ModelReasoning['efforts'][number]
 /** Per-session model directory snapshot (official state shape). */
 type DirectoryState = ModelDirectoryState
 /** The enhanced seat's injected business face. */
@@ -61,28 +61,6 @@ const IconClear = (
 		<path d="M10.6074 4.40278L8.00975 6.99973L10.6074 9.59739L9.59736 10.6074L6.9997 8.00978L4.40274 10.6074L3.3927 9.59739L5.98966 6.99973L3.3927 4.40278L4.40274 3.39273L6.9997 5.98969L9.59736 3.39273L10.6074 4.40278Z" fill="currentColor" />
 	</svg>
 );
-/** Canonical strength order of pi-ai thinking levels (strongest = highest). */
-const EFFORT_RANK = {
-	off: 0,
-	minimal: 1,
-	low: 2,
-	medium: 3,
-	high: 4,
-	xhigh: 5,
-	max: 6
-};
-/** The strongest thinking level a model offers, or undefined for none. */
-function maxEffortOf(reasoning: ModelReasoning): string | undefined {
-	let best;
-	for (const effort of reasoning.efforts) {
-		const rank = EFFORT_RANK[effort.id as keyof typeof EFFORT_RANK] ?? 0;
-		if (best === void 0 || rank > best.rank) best = {
-			id: effort.id,
-			rank
-		};
-	}
-	return best?.id;
-}
 /**
 * How long a successfully loaded directory snapshot is trusted before the
 * menu re-fetches it over RPC. The snapshot lives in the per-session store,
@@ -92,32 +70,6 @@ const DIRECTORY_STALE_MS = 3e4;
 /** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。 */
 const MAX_VISIBLE_HITS = 100;
 // ── 推理强度滑块（移植自 dsh-reasoning-effort：辐射特效 + 档位随模型自动适配）──
-function dmsEffortIndex(levels: readonly EffortLevel[], id: string | undefined): number {
-	return levels.findIndex((level) => level.id === id);
-}
-function dmsClampIndex(value: number, count: number): number {
-	if (count <= 0) return 0;
-	return Math.max(0, Math.min(count - 1, Math.round(value)));
-}
-function dmsCurrentModel(state: DirectoryState): ModelProviderGroup['models'][number] | undefined {
-	if (state.current === null) return void 0;
-	const current = state.current;
-	const group = state.groups.find((g) => g.id === current.provider);
-	const model = group?.models.find((m) => m.id === current.model);
-	return model ?? void 0;
-}
-function dmsEffectiveEffortIndex(levels: readonly EffortLevel[], state: DirectoryState): number {
-	const reasoning = dmsCurrentModel(state)?.reasoning;
-	const current = dmsEffortIndex(levels, state.current?.reasoningEffort);
-	if (current >= 0) return current;
-	const fallback = dmsEffortIndex(levels, reasoning?.defaultEffort);
-	if (fallback >= 0) return fallback;
-	return Math.floor((levels.length - 1) / 2);
-}
-function dmsSliderLevels(state: DirectoryState): readonly EffortLevel[] {
-	const efforts = dmsCurrentModel(state)?.reasoning?.efforts;
-	return efforts !== void 0 && efforts.length >= 2 ? efforts : [];
-}
 function dmsDrawRadiation(context: CanvasRenderingContext2D, width: number, height: number, time: number, state: { progress: number; dragging: boolean }): void {
   const origin = state.progress * width;
   const isDark = document.body.hasAttribute("data-ds-dark-theme");
