@@ -72,9 +72,19 @@ export function apply(ctx: ClientContext): void {
           available,
           directory: directory.store,
           load: () => {
-            if (available) directory.load().catch(() => {})
+            if (available) directory.load().catch((error: unknown) => { console.warn('[dsh-model-selector] directory.load failed:', error) })
           },
-          select: (selection) => available ? directory.select(selection).then(() => true, () => false) : Promise.resolve(false),
+          // 保留 boolean 契约（调用方按 false 走 notice），但把真实拒绝原因留在控制台，
+          // 否则用户只看到「切换失败」、线上无从定位。
+          select: (selection) => available
+            ? directory.select(selection).then(
+              () => true,
+              (error: unknown) => {
+                console.warn('[dsh-model-selector] select failed:', error)
+                return false
+              },
+            )
+            : Promise.resolve(false),
         }
       },
     }, ModelSelect))
