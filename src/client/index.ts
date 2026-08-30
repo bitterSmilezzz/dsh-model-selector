@@ -10,6 +10,10 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the ui-renderer Context merge (ctx.slots), moved here in dsh alpha.2.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the session controller Context merge (ctx.sessions) in alpha.2.
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input model seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -60,9 +64,10 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.input.model',
       locale: NS,
       priority: -1,
-      inject: (sessionId: SessionId): ModelSelectInjected => {
-        const directory = models.directoryFor(sessionId)
-        const available = sessions.subagentAddress(sessionId) === undefined
+      inject: (sessionId: string): ModelSelectInjected => {
+        const sid = sessionId as SessionId
+        const directory = models.directoryFor(sid)
+        const available = sessions.subagentAddress(sid) === undefined
         return {
           available,
           directory: directory.store,

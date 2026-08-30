@@ -22,8 +22,8 @@ export { zhDict, enDict }
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-// Type-only: the connection carrier types (model catalog shapes).
-import type { ModelReasoning, ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-client-connection/client'
+// Type-only: the model catalog carrier types (moved here in dsh alpha.2).
+import type { ModelReasoning, ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
 
 /** One model effort level as advertised by the adapter. */
 type EffortLevel = ModelReasoning['efforts'][number]
@@ -92,7 +92,7 @@ const DIRECTORY_STALE_MS = 3e4;
 /** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。 */
 const MAX_VISIBLE_HITS = 100;
 // ── 推理强度滑块（移植自 dsh-reasoning-effort：辐射特效 + 档位随模型自动适配）──
-function dmsEffortIndex(levels: EffortLevel[], id: string | undefined): number {
+function dmsEffortIndex(levels: readonly EffortLevel[], id: string | undefined): number {
 	return levels.findIndex((level) => level.id === id);
 }
 function dmsClampIndex(value: number, count: number): number {
@@ -106,7 +106,7 @@ function dmsCurrentModel(state: DirectoryState): ModelProviderGroup['models'][nu
 	const model = group?.models.find((m) => m.id === current.model);
 	return model ?? void 0;
 }
-function dmsEffectiveEffortIndex(levels: EffortLevel[], state: DirectoryState): number {
+function dmsEffectiveEffortIndex(levels: readonly EffortLevel[], state: DirectoryState): number {
 	const reasoning = dmsCurrentModel(state)?.reasoning;
 	const current = dmsEffortIndex(levels, state.current?.reasoningEffort);
 	if (current >= 0) return current;
@@ -114,7 +114,7 @@ function dmsEffectiveEffortIndex(levels: EffortLevel[], state: DirectoryState): 
 	if (fallback >= 0) return fallback;
 	return Math.floor((levels.length - 1) / 2);
 }
-function dmsSliderLevels(state: DirectoryState): EffortLevel[] {
+function dmsSliderLevels(state: DirectoryState): readonly EffortLevel[] {
 	const efforts = dmsCurrentModel(state)?.reasoning?.efforts;
 	return efforts !== void 0 && efforts.length >= 2 ? efforts : [];
 }
