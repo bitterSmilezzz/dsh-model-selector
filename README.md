@@ -5,8 +5,10 @@ DeepSeek Harness (DSH) 的**增强模型选择器（Model Selector）**：单层
 ## 功能
 
 - 替换官方输入区的模型选择 seat（`conversation.input.model`，shadow 方式叠加，不禁用官方组件）
-- 单层模型菜单：名称搜索过滤 + 提供商分组折叠
-- 选中模型后可展开底部内联**推理强度滑杆**
+- 单层模型菜单：名称搜索过滤 + 提供商分组折叠，选中行与供应商标可见高亮
+- 选中模型后可展开底部内联**推理强度滑杆**，实时显示当前档位名与该档位说明
+- 切换被宿主拒绝时，失败原因用官方 Toast 在输入区上方播报（菜单已关闭也能看到）
+- 选择推理模型会自动落到**最强思考档**，并在成功后提示落到的档位（行上有「推理」标记说明）
 - 与 `/model` 弹窗共用官方 `modelDirectories` 目录，两处实时同步
 
 ## 安装
@@ -31,7 +33,9 @@ dsh plugin --profile <profile> add <path-to-repo>
 
 ## 权限
 
-**权限等级：low**（完全无文件/网络/命令/凭据访问）。纯浏览器 UI，不注册任何 host 工具、不读写宿主文件、不发起网络请求。
+**权限等级：low**。纯 client UI：不注册 host 工具、不读写宿主文件、不访问凭据、不发起自有网络请求。
+
+模型目录与切换动作走**官方 session RPC**（`ctx.remote.session` 的目录加载与 `selectModel`），与官方模型选择器使用同一条通道、同一份 `modelDirectories` 目录状态；除此之外不与宿主通信。UI 反馈（Toast、图标、浮层定位）运行时复用官方 `@deepseek-ai/dsh-client-ui-primitives`。
 
 ## 已知风险
 

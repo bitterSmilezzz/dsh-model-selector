@@ -9,12 +9,19 @@
  *
  * Data and submission ride the SAME per-session directory the /model popup
  * shares (via `modelDirectories`), so a switch made here is what the popup
- * shows next and vice versa. Icons are inline SVG paths copied from
- * @deepseek-ai/dsh-client-ui-primitives (no runtime dependency); colors
+ * shows next and vice versa. Icons, Toast and the menu fit/dismiss hooks are
+ * reused from @deepseek-ai/dsh-client-ui-primitives at runtime; colors
  * come from `--dsw-*` tokens in the injected stylesheet.
  */
 import * as react from 'react'
 import { zh as zhDict, en as enDict } from './locales.ts'
+// Runtime reuse of the official primitives (already an external in
+// tsdown.config.ts and a platform module in the web loader): Toast is the
+// sanctioned surface for a rejected selection, and the two hooks fit/dismiss
+// the open menu. The list itself stays hand-rolled — primitives' Menu renders
+// every entry (footer included) as a <button role="menuitem">, which cannot
+// host the effort range input or the search field.
+import { Toast, IconWarningOutline16, IconChevronDownOutline14, IconCheckOutline14, IconCloseFill14, useAnchoredMaxHeight, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export { zhDict, enDict }
 // Type-only: official model-selection directory types (the enhanced seat's
@@ -40,27 +47,16 @@ type ModelChoice = {
 
 interface EffortSliderProps {
   state: DirectoryState
-  directory: unknown
   select: (selection: ModelSelection) => Promise<boolean>
   t: TranslateNS<'modelSelector'>
 }
 
 
-const IconChevronDown = (
-	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-		<path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor" />
-	</svg>
-);
-const IconCheck = (
-	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-		<path d="M11.5635 4.58984L7.61426 9.07715C7.35154 9.37561 7.11346 9.64812 6.89453 9.84668C6.66593 10.054 6.38519 10.2506 6.01465 10.3164C5.82079 10.3508 5.62207 10.3529 5.42773 10.3213C5.0561 10.2609 4.77266 10.0674 4.54102 9.86328C4.31926 9.66791 4.07752 9.39911 3.81055 9.10449L2.44531 7.59863L3.55664 6.59082L4.92188 8.09766C5.21256 8.41844 5.38878 8.61191 5.53223 8.73828C5.61022 8.80699 5.65253 8.83192 5.66895 8.83984C5.69648 8.84429 5.72449 8.84467 5.75195 8.83984C5.72657 8.84451 5.75564 8.85422 5.88672 8.73535C6.02833 8.60692 6.20225 8.41088 6.48828 8.08594L10.4385 3.59961L11.5635 4.58984Z" fill="currentColor" />
-	</svg>
-);
-const IconClear = (
-	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-		<path d="M10.6074 4.40278L8.00975 6.99973L10.6074 9.59739L9.59736 10.6074L6.9997 8.00978L4.40274 10.6074L3.3927 9.59739L5.98966 6.99973L3.3927 4.40278L4.40274 3.39273L6.9997 5.98969L9.59736 3.39273L10.6074 4.40278Z" fill="currentColor" />
-	</svg>
-);
+// 与 primitives 逐字节同源的图标（path 一致、默认 size 14），不再自带副本；
+// 图标组件只接受 size/className，aria-hidden 由调用处的包装元素承载。
+const IconChevronDown = <IconChevronDownOutline14 />;
+const IconCheck = <IconCheckOutline14 />;
+const IconClear = <IconCloseFill14 />;
 /**
 * How long a successfully loaded directory snapshot is trusted before the
 * menu re-fetches it over RPC. The snapshot lives in the per-session store,
@@ -69,6 +65,10 @@ const IconClear = (
 const DIRECTORY_STALE_MS = 3e4;
 /** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。 */
 const MAX_VISIBLE_HITS = 100;
+/** 菜单设计最大高度（px）；实际由 useAnchoredMaxHeight 按视口可用空间钳位。 */
+const MENU_MAX_HEIGHT = 420;
+/** 与视口边缘保留的距离；对齐 primitives 里未导出的 MARGIN。 */
+const MENU_VIEWPORT_MARGIN = 12;
 // ── 推理强度滑块（移植自 dsh-reasoning-effort：辐射特效 + 档位随模型自动适配）──
 function dmsDrawRadiation(context: CanvasRenderingContext2D, width: number, height: number, time: number, state: { progress: number; dragging: boolean }): void {
   const origin = state.progress * width;
@@ -146,7 +146,7 @@ function dmsDrawRadiation(context: CanvasRenderingContext2D, width: number, heig
   context.fillRect(origin - 26, 0, 52, height);
   context.restore();
 }
-export function EffortSlider({ state, directory, select, t }: EffortSliderProps) {
+export function EffortSlider({ state, select, t }: EffortSliderProps) {
 	const levels = dmsSliderLevels(state);
 	const [effort, setEffort] = react.useState("");
 	const [preview, setPreview] = react.useState(0);
@@ -304,6 +304,8 @@ export function EffortSlider({ state, directory, select, t }: EffortSliderProps)
 			const index = dmsClampIndex(raw, levels.length);
 			const next = levels[index]?.id;
 			if (next === void 0) throw new Error(t("empty.efforts"));
+			// 落回已提交的同一档：不发多余 RPC，否则菜单会被 selecting 状态闪一次灰。
+			if (next === committedRef.current) return;
 			previewRef.current = index;
 			setPreview(index);
 			setEffort(next);
@@ -324,7 +326,7 @@ export function EffortSlider({ state, directory, select, t }: EffortSliderProps)
 			committingRef.current = false;
 			setCommitting(false);
 		}
-	}, [directory, levels, select, state, t]);
+	}, [levels, select, state, t]);
 	const rawFromPointer = (input: HTMLInputElement, clientX: number): number => {
 		const bounds = input.getBoundingClientRect();
 		if (bounds.width <= 0 || levels.length < 2) return previewRef.current;
@@ -407,6 +409,7 @@ export function EffortSlider({ state, directory, select, t }: EffortSliderProps)
 	if (!available) return null;
 	const count = levels.length;
 	const effortName = levels[dmsEffortIndex(levels, effort)]?.name ?? effort;
+	const effortDesc = levels[dmsEffortIndex(levels, effort)]?.description;
 	const progress = preview / (count - 1) * 100;
 	const style = { "--dms-progress": `${progress}%` } as react.CSSProperties;
 	return (
@@ -457,6 +460,8 @@ export function EffortSlider({ state, directory, select, t }: EffortSliderProps)
 				/>
 				<span className="dms-effort-knob" aria-hidden="true" />
 			</div>
+			<span className="dms-effort-value">{effortName}</span>
+			{effortDesc === undefined ? null : <span className="dms-effort-desc">{effortDesc}</span>}
 			{error === null ? null : <span className="dms-effort-sr" role="status">{error}</span>}
 			{error === null ? null : <div className="dms-effort-error">{error}</div>}
 		</div>
@@ -480,6 +485,14 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const [query, setQuery] = react.useState("");
 	const [collapsed, setCollapsed] = react.useState<Set<string>>(() => new Set());
 	const [notice, setNotice] = react.useState<string | null>(null);
+	// 菜单内 notice 会随 close() 一起清掉，失败原因必须落在菜单外的瞬时横幅上
+	// （官方 seat 正是用 Toast 播报 select 拒绝）。seq 递增让同一段文案可重播。
+	const [toast, setToast] = react.useState<{ seq: number; text: string; failed: boolean } | null>(null);
+	const toastSeqRef = react.useRef(0);
+	const showToast = (text: string, failed = true): void => {
+		toastSeqRef.current += 1;
+		setToast({ seq: toastSeqRef.current, text, failed });
+	};
 	const lastActionRef = react.useRef<"load" | "select">("load");
 	const rootRef = react.useRef<HTMLDivElement | null>(null);
 	const triggerRef = react.useRef<HTMLButtonElement | null>(null);
@@ -538,28 +551,32 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			load();
 		}
 	}, [available, load]);
-	react.useEffect(() => {
-		if (!open) return;
-		const closeOutside = (event: MouseEvent) => {
-			if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-		};
-		document.addEventListener("mousedown", closeOutside);
-		return () => {
-			document.removeEventListener("mousedown", closeOutside);
-		};
-	}, [open]);
+	// 菜单高度按视口实测钳位（原先 CSS 写死 min(420px, 100vh - 96px)），
+	// composer 变高/窗口变小时自动收，不再溢出。
+	const menuRef = react.useRef<HTMLDivElement | null>(null);
+	// Hook fits a bottom-anchored overlay only — the menu growing upward.
+	const menuMaxHeight = useAnchoredMaxHeight(menuRef, MENU_MAX_HEIGHT, open);
+	const [belowMaxHeight, setBelowMaxHeight] = react.useState(MENU_MAX_HEIGHT);
+	useDismissOnOutsidePointer(rootRef, open, setOpen);
 	react.useEffect(() => {
 		if (!open) return;
 		const measure = () => {
 			const trigger = triggerRef.current;
 			if (trigger === null) return;
 			const rect = trigger.getBoundingClientRect();
-			// 菜单最高约 420px（含 8px 间距）；上方空间不足则向下弹。
-			setMenuAbove(rect.top >= 440);
+			// 上方放不下满高菜单（含 8px 间距与余量）时改为向下弹。
+			setMenuAbove(rect.top >= MENU_MAX_HEIGHT + 20);
+			// Downward the panel is top-anchored, so the hook's own fit would feed
+			// back on itself; clamp against the space below the trigger instead.
+			setBelowMaxHeight(Math.max(0, Math.min(MENU_MAX_HEIGHT, window.innerHeight - rect.bottom - MENU_VIEWPORT_MARGIN)));
 		};
 		measure();
 		window.addEventListener("resize", measure);
-		return () => window.removeEventListener("resize", measure);
+		window.addEventListener("scroll", measure, true);
+		return () => {
+			window.removeEventListener("resize", measure);
+			window.removeEventListener("scroll", measure, true);
+		};
 	}, [open]);
 	const resetTransient = () => {
 		setQuery("");
@@ -637,9 +654,17 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			...effort === void 0 ? {} : { reasoningEffort: effort }
 		};
 		lastActionRef.current = "select";
+		// 自动拉档只有「高于模型自己声明的默认档」时才算替用户做了决定，此时播报落点。
+		const autoRaised = effort !== void 0 && effort !== target?.model.reasoning?.defaultEffort;
+		const autoName = target?.model.reasoning?.efforts.find((level) => level.id === effort)?.name ?? effort ?? "";
 		select(full).then((accepted) => {
-			if (accepted && rootRef.current !== null) close(true);
-			else if (!accepted) setNotice(t("notice.selectFailed"));
+			if (!accepted) {
+				const message = directory.getSnapshot().error;
+				showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
+				return;
+			}
+			if (rootRef.current !== null) close(true);
+			if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
 		});
 	};
 	const toggleCollapse = (groupId: string): void => {
@@ -650,7 +675,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			return next;
 		});
 	};
-	const modelLabel = currentChoice?.model.name ?? t("trigger.fallback");
+	const modelLabel = currentChoice?.model.name ?? (state.status === "loading" && state.groups.length === 0 ? t("trigger.loading") : t("trigger.fallback"));
 	const providerLabel = currentChoice?.group.name;
 	const triggerLabel = effortLabel === void 0 ? modelLabel : `${modelLabel} · ${effortLabel}`;
 	const triggerTitle = providerLabel === void 0 ? triggerLabel : `${providerLabel} · ${triggerLabel}`;
@@ -672,6 +697,8 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			<button
 				ref={itemRef()}
 				type="button"
+				role="menuitemradio"
+				aria-checked={selected}
 				className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
 				title={model.name}
 				disabled={busy}
@@ -683,11 +710,14 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				}}
 			>
 				<span className="dms-model-option-copy">
-					<span className="dms-model-option-name">{model.name}</span>
+					<span className="dms-nameRow">
+						<span className="dms-model-option-name">{model.name}</span>
+						{model.reasoning !== undefined && <span className="dms-badge" title={t("badge.reasoningHint")}>{t("badge.reasoning")}</span>}
+					</span>
 					{model.description !== undefined && <span className="dms-model-option-desc">{model.description}</span>}
 					{showProvider && <span className="dms-model-option-provider">{group.name}</span>}
 				</span>
-				<span className="dms-model-check">
+				<span className="dms-model-check" aria-hidden="true">
 					{selected ? IconCheck : null}
 				</span>
 			</button>
@@ -730,13 +760,15 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				<span className="dms-triggerLabel">{modelLabel}</span>
 				{providerLabel !== undefined && <span className="dms-triggerProvider">{providerLabel}</span>}
 				{effortLabel !== undefined && <span className="dms-triggerEffort">{effortLabel}</span>}
-				<span className={`dms-chevron${open ? " dms-chevronOpen" : ""}`}>
+				<span className={`dms-chevron${open ? " dms-chevronOpen" : ""}`} aria-hidden="true">
 					{IconChevronDown}
 				</span>
 			</button>
 			{open ? (
 				<div
 					id={`${id}-menu`}
+					ref={menuRef}
+					style={{ maxHeight: menuAbove ? menuMaxHeight : belowMaxHeight }}
 					className={'dms-menu dms-menuModel' + (menuAbove ? '' : ' dms-menuBelow')}
 					aria-busy={state.status === 'loading' || busy}
 				>
@@ -767,11 +799,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 									searchRef.current?.focus();
 								}}
 							>
-								{IconClear}
+								<span aria-hidden="true" className="dms-icon-slot">{IconClear}</span>
 							</button>
 						)}
 					</div>
-					<div className="dms-groups">
+					<div className="dms-groups" role="menu" aria-label={t("menu.aria")}>
 						{hits !== null
 							? hits.length === 0
 								? <div className="dms-empty">{t('search.noMatch', { query: query.trim() })}</div>
@@ -794,7 +826,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 											aria-label={t('group.toggleAria', { name: group.name, count: String(group.models.length) })}
 											onClick={() => toggleCollapse(group.id)}
 										>
-											<span className={`dms-groupChevron${isCollapsed ? ' dms-groupChevronClosed' : ''}`}>
+											<span className={`dms-groupChevron${isCollapsed ? ' dms-groupChevronClosed' : ''}`} aria-hidden="true">
 												{IconChevronDown}
 											</span>
 											<span className="dms-groupName">{group.name}</span>
@@ -811,12 +843,21 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					{state.current !== null && dmsSliderLevels(state).length >= 2 && (
 						<div className="dms-effortFooter">
 							<span className="dms-effortFooterLabel">{t('menu.effort')}</span>
-							<EffortSlider state={state} directory={directory} select={select} t={t} />
+							<EffortSlider state={state} select={select} t={t} />
 						</div>
 					)}
 					{notice !== null && <div className="dms-notice" role="status">{notice}</div>}
 				</div>
 			) : null}
+			{toast !== null && (
+				<Toast
+					key={toast.seq}
+					text={toast.text}
+					icon={toast.failed ? <IconWarningOutline16 /> : undefined}
+					anchor={rootRef.current?.closest<HTMLElement>("[data-composer-card]") ?? null}
+					onDone={() => { setToast(null); }}
+				/>
+			)}
 		</div>
 	);
 }

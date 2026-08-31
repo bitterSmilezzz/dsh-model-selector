@@ -6,10 +6,11 @@
 */
 export const zh = {
 "trigger.fallback": "选择模型",
+"trigger.loading": "正在加载模型…",
 "trigger.selectAria": "选择模型",
 "trigger.aria": "选择模型，当前 {model}",
 "trigger.ariaEffort": "选择模型，当前 {model}，推理等级 {effort}",
-"menu.model": "模型",
+"menu.aria": "模型列表",
 "menu.effort": "推理等级",
 "search.placeholder": "搜索模型",
 "search.clearAria": "清除搜索",
@@ -26,7 +27,7 @@ export const zh = {
 "effort.failed": "档位切换未生效（后端未接受），已恢复原档位",
 "notice.already": "已是当前模型，无需切换",
 "notice.selectFailed": "切换失败，请重试",
-"notice.alreadyEffort": "已是当前推理等级",
+"toast.effortAuto": "已自动选到最强思考档：{effort}",
 "badge.reasoning": "推理",
 "badge.reasoningHint": "支持思考等级，切换后自动选到最大思考强度"
 };
@@ -34,10 +35,11 @@ export const zh = {
 
 export const en = {
 	"trigger.fallback": "Select model",
+	"trigger.loading": "Loading models…",
 	"trigger.selectAria": "Select model",
 	"trigger.aria": "Select model, current {model}",
 	"trigger.ariaEffort": "Select model, current {model}, reasoning effort {effort}",
-	"menu.model": "Model",
+	"menu.aria": "Model list",
 	"menu.effort": "Effort",
 	"search.placeholder": "Search models",
 	"search.clearAria": "Clear search",
@@ -54,7 +56,7 @@ export const en = {
 	"effort.failed": "Failed to switch effort (backend rejected); restored",
 	"notice.already": "Already the current model",
 "notice.selectFailed": "Switch failed, please try again",
-	"notice.alreadyEffort": "Already the current effort",
+	"toast.effortAuto": "Auto-selected the strongest reasoning level: {effort}",
 	"badge.reasoning": "Reasoning",
 	"badge.reasoningHint": "Supports reasoning levels; switches land on the strongest"
 };

@@ -76,7 +76,7 @@ export const CSS = `
   transition: transform 120ms ease;
 }
 .dms-groupChevronClosed { transform: rotate(-90deg); }
-.dms-check svg { display: block; }
+.dms-model-check svg { display: block; }
 
 .dms-menu {
   position: absolute;
@@ -86,7 +86,6 @@ export const CSS = `
   display: flex;
   flex-direction: column;
   width: min(280px, calc(100vw - 32px));
-  max-height: min(420px, calc(100vh - 96px));
   overflow: hidden;
   padding: 4px 0 4px 4px;
   border: 1px solid var(--dsw-alias-border-inverted);
@@ -94,6 +93,7 @@ export const CSS = `
   background: var(--dsw-specific-menu);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-primary);
+  animation: dms-menu-in 150ms cubic-bezier(.22,1,.36,1);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -197,6 +197,8 @@ export const CSS = `
   cursor: pointer;
 }
 .dms-searchClear:hover { color: var(--dsw-alias-label-primary); }
+/* 图标组件只收 size/className，装饰性 aria-hidden 只能包一层 span；contents 让它不占布局。 */
+.dms-icon-slot { display: contents; }
 
 .dms-groups { flex: 1 1 auto; min-height: 0; overflow-y: auto; contain: content; }
 .dms-group + .dms-group { margin-top: 4px; }
@@ -231,48 +233,11 @@ export const CSS = `
 }
 .dms-groupCount { flex: 0 0 auto; color: var(--dsw-alias-label-dimmed); font-weight: 400; }
 
-.dms-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 38px;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 10px;
-  outline: none;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.dms-option:hover:not(:disabled),
-.dms-option:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }
-.dms-option.dms-selected { background: var(--dsw-alias-interactive-bg-hover); }
-.dms-option:disabled { color: var(--dsw-alias-label-dimmed); cursor: default; }
-
-.dms-optionCopy {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
 .dms-nameRow {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-.dms-modelName {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: inherit;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .dms-badge {
   flex: 0 0 auto;
@@ -294,45 +259,42 @@ export const CSS = `
   font-size: 12px;
   line-height: 18px;
 }
-.dms-description {
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dms-providerTag {
-  overflow: hidden;
-  color: var(--dsw-alias-label-dimmed);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dms-check {
-  display: grid;
-  place-items: center;
-  flex: 0 0 18px;
-  color: var(--dsw-alias-label-primary);
-}
-
 .dms-effort {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   width: 100%;
   min-width: 0;
-  height: 32px;
+  min-height: 32px;
   color: var(--dsw-alias-label-secondary);
   user-select: none;
   box-sizing: border-box;
+}
+/* 档位读数：拖动时实时跟随 preview，替代此前只有读屏能看到的 aria-valuetext。 */
+.dms-effort-value {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  min-width: 3.2em;
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: right;
+}
+/* 官方契约的 efforts[].description，整行展示在滑杆下方。 */
+.dms-effort-desc {
+  flex: 1 0 100%;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 14px;
 }
 .dms-effort-slider {
   --dms-progress: 50%;
   position: relative;
   width: 100%;
   height: 30px;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
   border-radius: 999px;
   isolation: isolate;
   transition: filter 180ms ease;
@@ -467,7 +429,7 @@ export const CSS = `
   outline-offset: 2px;
 }
 .dms-effort.is-busy { opacity: .72; }
-.dms-effort-error { margin-top: 8px; padding: 6px 10px; border-radius: 8px; color: var(--dsw-alias-state-error-primary, #c83e4d); background: var(--dsw-alias-state-error-tertiary, rgba(220,55,70,.08)); font-size: 11px; line-height: 1.5; }
+.dms-effort-error { flex: 1 0 100%; margin-top: 8px; padding: 6px 10px; border-radius: 8px; color: var(--dsw-alias-state-error-primary, #c83e4d); background: var(--dsw-alias-state-error-tertiary, rgba(220,55,70,.08)); font-size: 11px; line-height: 1.5; }
 .dms-effort-sr {
   position: absolute;
   width: 1px;
@@ -479,142 +441,43 @@ export const CSS = `
   white-space: nowrap;
   border: 0;
 }
-.dms-model-root {
-  position: relative;
-  display: inline-flex;
-  min-width: 0;
-}
-.dms-model-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 230px;
-  height: 28px;
-  padding: 0 8px 0 10px;
-  border: 0;
-  border-radius: 9px;
-  color: var(--dsw-alias-label-primary, #15171b);
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.dms-model-trigger:hover,
-.dms-model-trigger[aria-expanded="true"] {
-  background: var(--dsw-alias-fill-tertiary, rgba(120,125,140,.1));
-}
-.dms-model-trigger:disabled { cursor: not-allowed; opacity: .5; }
-.dms-model-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  line-height: 1;
-}
-.dms-model-effort {
-  flex: 0 0 auto;
-  color: var(--dsw-static-deepseek-500, #4d70ff);
-  font-size: 12px;
-  line-height: 1;
-}
-.dms-model-chevron {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  margin: -3px 1px 0 3px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  opacity: .55;
-  transform: rotate(45deg);
-  transition: transform 150ms ease, margin 150ms ease;
-}
-.dms-model-trigger[aria-expanded="true"] .dms-model-chevron {
-  margin-top: 3px;
-  transform: rotate(225deg);
-}
-.dms-model-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  z-index: 1200;
-  width: min(312px, calc(100vw - 32px));
-  overflow: hidden;
-  border: 1px solid var(--dsw-alias-stroke-secondary, rgba(121,126,145,.2));
-  border-radius: 16px;
-  color: var(--dsw-alias-label-primary, #15171b);
-  background: var(--dsw-alias-bg-elevated, #fff);
-  box-shadow: 0 14px 42px rgba(18, 24, 42, .18), 0 3px 10px rgba(18, 24, 42, .08);
-  animation: dms-menu-in 150ms cubic-bezier(.22,1,.36,1);
-}
-.dms-advanced {
-  padding: 14px;
-}
-.dms-menu-separator {
-  height: 1px;
-  background: var(--dsw-alias-stroke-secondary, rgba(121,126,145,.16));
-}
-.dms-model-row,
-.dms-model-option,
-.dms-model-back {
-  width: 100%;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
-}
-.dms-model-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 8px;
-  min-height: 45px;
-  padding: 0 14px;
-  text-align: left;
-}
-.dms-model-row:hover,
-.dms-model-option:hover,
-.dms-model-back:hover { background: var(--dsw-alias-fill-tertiary, rgba(120,125,140,.09)); }
-.dms-model-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.dms-model-row-effort { color: var(--dsw-static-deepseek-500, #4d70ff); font-size: 12px; }
-.dms-row-chevron { font-size: 20px; line-height: 1; opacity: .42; }
-.dms-model-pane { max-height: min(390px, 60vh); overflow-y: auto; padding: 7px; }
-.dms-model-back {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 8px;
-  border-radius: 8px;
-  text-align: left;
-  color: var(--dsw-alias-label-secondary, #686c75);
-  font-size: 12px;
-}
-.dms-model-group-title { padding: 10px 9px 5px; color: var(--dsw-alias-label-tertiary, #9296a0); font-size: 11px; }
 .dms-model-option {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 20px;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-height: 38px;
   padding: 7px 9px;
+  border: 0;
   border-radius: 9px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
   text-align: left;
+  cursor: pointer;
 }
+.dms-model-option:hover { background: var(--dsw-alias-fill-tertiary, rgba(120,125,140,.09)); }
 .dms-model-option-copy { min-width: 0; }
 .dms-model-option-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .dms-model-option-desc { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-tertiary, #9296a0); font-size: 10px; }
 .dms-model-check { color: var(--dsw-static-deepseek-500, #4d70ff); font-size: 15px; text-align: center; }
-.dms-model-status { padding: 14px; color: var(--dsw-alias-label-tertiary, #9296a0); font-size: 12px; text-align: center; }
-.dms-model-error { margin: 8px; padding: 8px 10px; border-radius: 8px; color: var(--dsw-alias-state-error-primary, #c83e4d); background: var(--dsw-alias-state-error-tertiary, rgba(220,55,70,.08)); font-size: 11px; }
-body[data-ds-dark-theme] .dms-model-menu {
-  border-color: rgba(136, 145, 180, .2);
-  color: var(--dsw-alias-label-primary, #f2f4f8);
-  background: var(--dsw-alias-bg-elevated, #202126);
-  box-shadow: 0 18px 46px rgba(0,0,0,.48), 0 3px 12px rgba(0,0,0,.32);
+/* 方向键导航把焦点落在选项上，此前没有任何焦点指示。 */
+.dms-model-option:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }
+/* 当前选中行：仅靠勾号不足以在密集列表里定位。 */
+.dms-model-optionSelected { background: var(--dsw-alias-interactive-bg-hover); }
+.dms-model-optionSelected .dms-model-option-name { font-weight: 600; }
+/* 搜索结果里的供应商标是区分跨供应商同名模型的唯一线索，之前无任何样式。 */
+.dms-model-option-provider {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-dimmed, #9296a0);
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-body[data-ds-dark-theme] .dms-model-trigger { color: var(--dsw-alias-label-primary, #f2f4f8); }
 @keyframes dms-menu-in {
   from { opacity: 0; transform: translateY(5px) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -675,16 +538,12 @@ body:not([data-ds-dark-theme]) .dms-effort.is-dragging .dms-effort-knob {
     0 0 20px rgba(25,100,201,.45),
     0 3px 8px rgba(39,77,119,.18);
 }
-body[data-ds-dark-theme] .dms-adapt-panel {
-  background: rgba(20, 22, 30, .5);
-}
 @media (prefers-reduced-motion: reduce) {
   .dms-effort-knob,
   .dms-effort-flare,
   body:not([data-ds-dark-theme]) .dms-effort-track::before { transition: none; }
-  .dms-model-menu { animation: none; }
+  .dms-menu { animation: none; }
 }
-.dms-effort-head { padding: 0 14px 6px; color: var(--dsw-alias-label-tertiary, #9296a0); font-size: 11px; }
 
 /* Inline effort footer pinned below the scrollable model list (single-pane
    menu: switching models and adjusting effort both live in one surface). */
