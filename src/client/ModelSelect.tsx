@@ -52,7 +52,7 @@ interface EffortSliderProps {
 }
 
 
-// 与 primitives 逐字节同源的图标（path 一致、默认 size 14），不再自带副本；
+// 图标直接用 primitives 的组件（此前本仓自带一份逐字节相同的 SVG 副本）；
 // 图标组件只接受 size/className，aria-hidden 由调用处的包装元素承载。
 const IconChevronDown = <IconChevronDownOutline14 />;
 const IconCheck = <IconCheckOutline14 />;
