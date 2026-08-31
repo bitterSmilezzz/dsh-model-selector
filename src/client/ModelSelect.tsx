@@ -724,6 +724,8 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		);
 	};
 	const renderErrorStrip = () => {
+		// Load failures only: a rejected select is announced by the Toast, which
+		// also survives closing the menu (see choose()).
 		if (state.error !== null && lastActionRef.current === "load") {
 			return (
 				<div className="dms-error">
@@ -731,9 +733,6 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					<button type="button" className="dms-retry" onClick={reload}>{t("action.reload")}</button>
 				</div>
 			);
-		}
-		if (state.error !== null && lastActionRef.current === "select") {
-			return <div className="dms-error"><span>{t("error.action", { message: state.error })}</span></div>;
 		}
 		return null;
 	};
