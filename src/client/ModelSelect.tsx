@@ -622,8 +622,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			moveFocus(event.key === "ArrowDown" ? 1 : -1);
 			return;
 		}
-		if (event.key === "Enter" && !(target instanceof HTMLButtonElement)) {
-			// 搜索框（或其他非按钮焦点）回车 = 选中第一个搜索命中；无查询/无命中不动作。
+		// 只有搜索框内的 Enter 才选中第一个命中：焦点落在 effort 滑杆（range
+		// input）等其它控件时，Enter 不应把用户的选择抢走。
+		if (event.key === "Enter" && fromSearch) {
 			if (hits !== null && hits.length > 0) {
 				event.preventDefault();
 				const first = hits[0]!;

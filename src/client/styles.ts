@@ -102,6 +102,7 @@ export const CSS = `
 .dms-menuBelow {
   bottom: auto;
   top: calc(100% + 8px);
+  animation-name: dms-menu-in-below;
 }
 
 .dms-status,
@@ -481,6 +482,10 @@ export const CSS = `
 }
 @keyframes dms-menu-in {
   from { opacity: 0; transform: translateY(5px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes dms-menu-in-below {
+  from { opacity: 0; transform: translateY(-5px) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 body:not([data-ds-dark-theme]) .dms-effort-slider {
