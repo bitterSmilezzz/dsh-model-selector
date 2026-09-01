@@ -21,7 +21,8 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "assets"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.host.json && tsdown",

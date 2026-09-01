@@ -1,6 +1,16 @@
 # dsh-model-selector
 
+<p align="center">
+  <img src="assets/cover.png" width="720" alt="dsh-model-selector：单层模型菜单 + 推理强度滑杆" />
+</p>
+
 DeepSeek Harness (DSH) 的**增强模型选择器（Model Selector）**：单层菜单（搜索 + 分组）+ 底部内联推理强度（Reasoning Effort）滑杆。从 dsh-ui-tweaks 按功能拆分出的独立插件包。
+
+## 界面预览
+
+默认菜单（分组折叠 + 推理滑杆） | 搜索过滤（跨供应商同名模型带供应商标）
+:---: | :---:
+<img src="assets/menu-default.png" width="360" alt="默认菜单" /> | <img src="assets/menu-search.png" width="360" alt="搜索过滤" />
 
 ## 功能
 
