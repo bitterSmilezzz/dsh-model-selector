@@ -557,7 +557,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		}))),
 		[state.groups],
 	);
-	const currentChoice = choices[react.useMemo(() => state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model), [choices, state.current])];
+	const currentChoice = react.useMemo(() => {
+		const current = state.current;
+		if (current === null) return void 0;
+		return choices.find((c) => c.selection.provider === current.provider && c.selection.model === current.model);
+	}, [choices, state.current]);
 	const reasoning = currentChoice?.model.reasoning;
 	const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
 	const effortLabel = reasoning === void 0 ? void 0 : effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
@@ -620,7 +624,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		if (!open) return;
 		searchRef.current?.focus();
 	}, [open]);
-	if (!available) return null;
+	// show/close/choose/toggleCollapse 四个 useCallback 必须全部位于下方
+	// `if (!available) return null` 早退之前：hooks 数量不得随渲染分支变化
+	// （React 会直接抛 "Rendered more hooks than during the previous render"）。
 	const show = react.useCallback(() => {
 		setOpen(true);
 		if (state.status === "error" || state.groups.length === 0 || Date.now() - lastLoadRef.current > DIRECTORY_STALE_MS) reload();
@@ -633,6 +639,43 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			triggerRef.current?.focus();
 		});
 	}, []);
+	const choose = react.useCallback((selection: ModelSelection): void => {
+		if (busy) return;
+		if (state.current?.provider === selection.provider && state.current.model === selection.model) {
+			setNotice(t("notice.already"));
+			return;
+		}
+		const target = choices.find((c) => c.selection.provider === selection.provider && c.selection.model === selection.model);
+		const max = target?.model.reasoning === void 0 ? void 0 : maxEffortOf(target.model.reasoning);
+		const effort = max === "off" ? void 0 : max;
+		const full = {
+			provider: selection.provider,
+			model: selection.model,
+			...effort === void 0 ? {} : { reasoningEffort: effort }
+		};
+		lastActionRef.current = "select";
+		// 自动拉档只有「高于模型自己声明的默认档」时才算替用户做了决定，此时播报落点。
+		const autoRaised = effort !== void 0 && effort !== target?.model.reasoning?.defaultEffort;
+		const autoName = target?.model.reasoning?.efforts.find((level) => level.id === effort)?.name ?? effort ?? "";
+		select(full).then((accepted) => {
+			if (!accepted) {
+				const message = directory.getSnapshot().error;
+				showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
+				return;
+			}
+			if (rootRef.current !== null) close(true);
+			if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
+		});
+	}, [busy, state.current, choices, select, t, directory, close, showToast]);
+	const toggleCollapse = react.useCallback((groupId: string): void => {
+		setCollapsed((prev) => {
+			const next = new Set(prev);
+			if (next.has(groupId)) next.delete(groupId);
+			else next.add(groupId);
+			return next;
+		});
+	}, []);
+	if (!available) return null;
 	// 键盘导航：按 DOM 顺序查询菜单内全部行（data-row-key），不再依赖渲染期
 	// 收集的 ref 数组（那既阻止行级 memo，又把副作用塞进 render）。
 	const moveFocus = (offset: number): void => {
@@ -644,6 +687,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		items[((active < 0 ? offset > 0 ? -1 : 0 : active) + offset + items.length) % items.length]?.focus();
 	};
 	const onRootKeyDown = (event: react.KeyboardEvent<HTMLDivElement>): void => {
+		// IME 组合输入期间不劫持按键：Enter 是候选上屏确认、方向键在候选窗翻页、
+		// Escape 是取消组合——此时关菜单/选首个命中/移焦点都是抢用户的输入。
+		if (event.nativeEvent.isComposing) return;
 		if (event.key === "Escape" && open) {
 			event.preventDefault();
 			close(true);
@@ -680,41 +726,6 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		// relatedTarget 为 null（窗口失焦 alt-tab / 焦点落到不可聚焦区域）也收起菜单。
 		close();
 	};
-	const choose = react.useCallback((selection: ModelSelection): void => {
-		if (state.current?.provider === selection.provider && state.current.model === selection.model) {
-			setNotice(t("notice.already"));
-			return;
-		}
-		const target = choices.find((c) => c.selection.provider === selection.provider && c.selection.model === selection.model);
-		const max = target?.model.reasoning === void 0 ? void 0 : maxEffortOf(target.model.reasoning);
-		const effort = max === "off" ? void 0 : max;
-		const full = {
-			provider: selection.provider,
-			model: selection.model,
-			...effort === void 0 ? {} : { reasoningEffort: effort }
-		};
-		lastActionRef.current = "select";
-		// 自动拉档只有「高于模型自己声明的默认档」时才算替用户做了决定，此时播报落点。
-		const autoRaised = effort !== void 0 && effort !== target?.model.reasoning?.defaultEffort;
-		const autoName = target?.model.reasoning?.efforts.find((level) => level.id === effort)?.name ?? effort ?? "";
-		select(full).then((accepted) => {
-			if (!accepted) {
-				const message = directory.getSnapshot().error;
-				showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
-				return;
-			}
-			if (rootRef.current !== null) close(true);
-			if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
-		});
-	}, [state.current, choices, select, t, directory, close, showToast]);
-	const toggleCollapse = react.useCallback((groupId: string): void => {
-		setCollapsed((prev) => {
-			const next = new Set(prev);
-			if (next.has(groupId)) next.delete(groupId);
-			else next.add(groupId);
-			return next;
-		});
-	}, []);
 	const modelLabel = currentChoice?.model.name ?? (state.status === "loading" && state.groups.length === 0 ? t("trigger.loading") : t("trigger.fallback"));
 	const providerLabel = currentChoice?.group.name;
 	const triggerLabel = effortLabel === void 0 ? modelLabel : `${modelLabel} · ${effortLabel}`;
