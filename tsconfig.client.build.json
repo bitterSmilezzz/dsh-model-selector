@@ -1,0 +1,14 @@
+{
+  // Client declaration emit: tsconfig.client.json is noEmit (typecheck-only),
+  // but package.json exports["./client"].types must resolve to a real file, so
+  // this program emits just the client .d.ts tree into lib/types/client
+  // (tsdown owns the .js bundle; tsc owns the type surface).
+  "extends": "./tsconfig.client.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "lib/types/client"
+  }
+}
