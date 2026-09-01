@@ -483,6 +483,9 @@ export const CSS = `
 /* 当前选中行：仅靠勾号不足以在密集列表里定位。 */
 .dms-model-optionSelected { background: var(--dsw-alias-interactive-bg-hover); }
 .dms-model-optionSelected .dms-model-option-name { font-weight: 600; }
+/* select 进行中：官方以 disabled 变灰表达，这里用 aria-busy 驱动同样的视觉、
+   不夺键盘焦点（aria-disabled 保连续性，见 ModelOption）。 */
+.dms-menu[aria-busy="true"] .dms-model-option { color: var(--dsw-alias-label-dimmed); }
 /* 搜索结果里的供应商标是区分跨供应商同名模型的唯一线索，之前无任何样式。 */
 .dms-model-option-provider {
   display: block;

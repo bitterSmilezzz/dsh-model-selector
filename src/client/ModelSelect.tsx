@@ -147,8 +147,10 @@ function dmsDrawRadiation(context: CanvasRenderingContext2D, width: number, heig
 }
 export const EffortSlider = react.memo(function EffortSlider({ state, select, t }: EffortSliderProps) {
 	const levels = dmsSliderLevels(state);
-	const [effort, setEffort] = react.useState("");
-	const [preview, setPreview] = react.useState(0);
+	// 惰性初始化到当前生效档：useState("")/0 会让菜单打开的第一帧档位名为空、
+	// 进度闪 0%，随后才被同步 effect 纠正（首帧即正确，无闪烁）。
+	const [effort, setEffort] = react.useState(() => levels[dmsEffectiveEffortIndex(levels, state)]?.id ?? "");
+	const [preview, setPreview] = react.useState(() => dmsEffectiveEffortIndex(levels, state));
 	const [committing, setCommitting] = react.useState(false);
 	const [dragging, setDragging] = react.useState(false);
 	const [localError, setLocalError] = react.useState<string | null>(null);
@@ -648,6 +650,8 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		searchRef.current?.focus();
 		// 打开即把当前选中行滚进可视区：选中模型在长列表深处时不用手动翻找。
 		// 手动改 scrollTop 而不用 scrollIntoView，避免连带滚动页面/其它祖先容器。
+		// 吸顶分组头（sticky top:0）会盖住滚到容器顶缘的行：偏移量按所在组的
+		// 头部实际高度让位，否则「滚到了」却看不见。
 		queueMicrotask(() => {
 			const list = menuRef.current?.querySelector(".dms-groups");
 			if (list === null || list === void 0) return;
@@ -655,7 +659,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			if (row === null) return;
 			const rowRect = row.getBoundingClientRect();
 			const listRect = list.getBoundingClientRect();
-			if (rowRect.top < listRect.top) list.scrollTop += rowRect.top - listRect.top;
+			const header = row.closest("section")?.querySelector(".dms-groupHeader");
+			const headerHeight = header === null || header === undefined ? 0 : header.getBoundingClientRect().height;
+			if (rowRect.top < listRect.top + headerHeight) list.scrollTop += rowRect.top - (listRect.top + headerHeight);
 			else if (rowRect.bottom > listRect.bottom) list.scrollTop += rowRect.bottom - listRect.bottom;
 		});
 	}, [open]);
@@ -721,6 +727,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		const active = items.findIndex((item) => item === document.activeElement);
 		items[((active < 0 ? offset > 0 ? -1 : 0 : active) + offset + items.length) % items.length]?.focus();
 	};
+	// Home/End 跳首/末行（WAI-ARIA menu 标准键；搜索框内不劫持——那是移光标键）。
+	const focusEdge = (last: boolean): void => {
+		const items = menuRef.current?.querySelectorAll<HTMLButtonElement>('[data-row-key]');
+		if (items === undefined || items.length === 0) return;
+		(last ? items[items.length - 1] : items[0])?.focus();
+	};
 	const onRootKeyDown = (event: react.KeyboardEvent<HTMLDivElement>): void => {
 		// IME 组合输入期间不劫持按键：Enter 是候选上屏确认、方向键在候选窗翻页、
 		// Escape 是取消组合——此时关菜单/选首个命中/移焦点都是抢用户的输入。
@@ -746,6 +758,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			moveFocus(event.key === "ArrowDown" ? 1 : -1);
 			return;
 		}
+		if ((event.key === "Home" || event.key === "End") && !(target instanceof HTMLInputElement)) {
+			event.preventDefault();
+			focusEdge(event.key === "End");
+			return;
+		}
 		// 只有搜索框内的 Enter 才选中第一个命中：焦点落在 effort 滑杆（range
 		// input）等其它控件时，Enter 不应把用户的选择抢走。
 		if (event.key === "Enter" && fromSearch) {
@@ -767,11 +784,17 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		// relatedTarget 为 null（窗口失焦 alt-tab / 焦点落到不可聚焦区域）也收起菜单。
 		close();
 	};
-	const modelLabel = currentChoice?.model.name ?? (state.status === "loading" && state.groups.length === 0 ? t("trigger.loading") : t("trigger.fallback"));
+	// 标签兜底对齐官方：目录成员资格只是参考（routable 契约），current 匹配不到
+	// group 不代表没有选择——此时显示 provider/model 原始 id，而不是「选择模型」。
+	const waiting = state.current === null && state.status === "loading";
+	const modelLabel = currentChoice?.model.name
+		?? (waiting
+			? t("trigger.loading")
+			: state.current === null ? t("trigger.fallback") : `${state.current.provider}/${state.current.model}`);
 	const providerLabel = currentChoice?.group.name;
 	const triggerLabel = effortLabel === void 0 ? modelLabel : `${modelLabel} · ${effortLabel}`;
 	const triggerTitle = providerLabel === void 0 ? triggerLabel : `${providerLabel} · ${triggerLabel}`;
-	const triggerAria = currentChoice === void 0 ? t("trigger.selectAria") : effortLabel === void 0 ? t("trigger.aria", { model: providerLabel === void 0 ? modelLabel : `${providerLabel} ${modelLabel}` }) : t("trigger.ariaEffort", {
+	const triggerAria = waiting ? t("trigger.loading") : currentChoice === void 0 ? (state.current === null ? t("trigger.selectAria") : t("trigger.aria", { model: `${state.current.provider}/${state.current.model}` })) : effortLabel === void 0 ? t("trigger.aria", { model: providerLabel === void 0 ? modelLabel : `${providerLabel} ${modelLabel}` }) : t("trigger.ariaEffort", {
 		model: providerLabel === void 0 ? modelLabel : `${providerLabel} ${modelLabel}`,
 		effort: effortLabel
 	});
@@ -801,7 +824,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				type="button"
 				className="dms-trigger"
 				aria-label={triggerAria}
-				aria-haspopup="true"
+				aria-haspopup="menu"
 				aria-expanded={open}
 				aria-controls={open ? `${id}-menu` : undefined}
 				title={triggerTitle}
@@ -839,6 +862,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							aria-label={t('search.placeholder')}
 							aria-controls={`${id}-groups`}
 							autoComplete="off"
+							enterKeyHint="search"
 							spellCheck={false}
 							onChange={(event: react.ChangeEvent<HTMLInputElement>) => {
 								setNotice(null);
