@@ -145,7 +145,7 @@ function dmsDrawRadiation(context: CanvasRenderingContext2D, width: number, heig
   context.fillRect(origin - 26, 0, 52, height);
   context.restore();
 }
-export function EffortSlider({ state, select, t }: EffortSliderProps) {
+export const EffortSlider = react.memo(function EffortSlider({ state, select, t }: EffortSliderProps) {
 	const levels = dmsSliderLevels(state);
 	const [effort, setEffort] = react.useState("");
 	const [preview, setPreview] = react.useState(0);
@@ -465,7 +465,50 @@ export function EffortSlider({ state, select, t }: EffortSliderProps) {
 			{error === null ? null : <div className="dms-effort-error">{error}</div>}
 		</div>
 	);
+});
+
+interface ModelOptionProps {
+	group: ModelProviderGroup
+	model: ModelProviderGroup['models'][number]
+	showProvider: boolean
+	selected: boolean
+	busy: boolean
+	/** 键盘导航用的稳定行标识：菜单内 `[data-row-key]` 查询即按 DOM 顺序聚焦。 */
+	rowKey: string
+	t: TranslateNS<'modelSelector'>
+	onChoose: (selection: ModelSelection) => void
 }
+/**
+ * 菜单里的一行模型。独立成 memo 组件：目录可能数百行，搜索输入每击键都会
+ * 重建菜单内容，行 props（group/model 引用、selected/busy/rowKey、稳定的
+ * onChoose）稳定时 React 直接跳过 reconcile，只重渲染真正变化的那行。
+ */
+const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, t, onChoose }: ModelOptionProps) {
+	return (
+		<button
+			type="button"
+			role="menuitemradio"
+			aria-checked={selected}
+			data-row-key={rowKey}
+			className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
+			title={model.name}
+			disabled={busy}
+			onClick={() => onChoose({ provider: group.id, model: model.id })}
+		>
+			<span className="dms-model-option-copy">
+				<span className="dms-nameRow">
+					<span className="dms-model-option-name">{model.name}</span>
+					{model.reasoning !== undefined && <span className="dms-badge" title={t("badge.reasoningHint")}>{t("badge.reasoning")}</span>}
+				</span>
+				{model.description !== undefined && <span className="dms-model-option-desc">{model.description}</span>}
+				{showProvider && <span className="dms-model-option-provider">{group.name}</span>}
+			</span>
+			<span className="dms-model-check" aria-hidden="true">
+				{selected ? IconCheck : null}
+			</span>
+		</button>
+	);
+});
 
 interface ModelSelectProps {
   locked: boolean
@@ -488,38 +531,32 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	// （官方 seat 正是用 Toast 播报 select 拒绝）。seq 递增让同一段文案可重播。
 	const [toast, setToast] = react.useState<{ seq: number; text: string; failed: boolean } | null>(null);
 	const toastSeqRef = react.useRef(0);
-	const showToast = (text: string, failed = true): void => {
+	const showToast = react.useCallback((text: string, failed = true): void => {
 		toastSeqRef.current += 1;
 		setToast({ seq: toastSeqRef.current, text, failed });
-	};
+	}, []);
 	const lastActionRef = react.useRef<"load" | "select">("load");
 	const rootRef = react.useRef<HTMLDivElement | null>(null);
 	const triggerRef = react.useRef<HTMLButtonElement | null>(null);
 	const searchRef = react.useRef<HTMLInputElement | null>(null);
-	const itemRefs = react.useRef<(HTMLButtonElement | null)[]>([]);
 	const lastLoadRef = react.useRef(0);
-	const lastGroupsKeyRef = react.useRef<readonly ModelProviderGroup[] | null>(null);
-	const choicesCacheRef = react.useRef<ModelChoice[]>([]);
 	const id = react.useId();
 	// 模型目录稳定时，haystack 索引不随 select/状态抖动重建：仅在 groups 引用
-	// 真正变化（新 load 结果）时重建 400+ 条搜索索引。
-	{
-		const groupsKey = state.groups;
-		if (lastGroupsKeyRef.current !== groupsKey) {
-			lastGroupsKeyRef.current = groupsKey;
-			choicesCacheRef.current = groupsKey.flatMap((group) => group.models.map((model) => ({
-				group,
-				model,
-				haystack: `${model.name}\n${model.description ?? ""}\n${group.name}\n${model.id}\n${group.id}`.toLowerCase(),
-				selection: {
-					provider: group.id,
-					model: model.id,
-					...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
-				}
-			})));
-		}
-	}
-	const choices = choicesCacheRef.current;
+	// 真正变化（新 load 结果）时重建 400+ 条搜索索引。useMemo 保证 group 引用
+	// 未变时 choices 引用稳定，currentChoice/hits 的 useMemo 依赖它也不会抖动。
+	const choices = react.useMemo<readonly ModelChoice[]>(
+		() => state.groups.flatMap((group) => group.models.map((model) => ({
+			group,
+			model,
+			haystack: `${model.name}\n${model.description ?? ""}\n${group.name}\n${model.id}\n${group.id}`.toLowerCase(),
+			selection: {
+				provider: group.id,
+				model: model.id,
+				...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
+			}
+		}))),
+		[state.groups],
+	);
 	const currentChoice = choices[react.useMemo(() => state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model), [choices, state.current])];
 	const reasoning = currentChoice?.model.reasoning;
 	const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
@@ -535,11 +572,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		});
 		return found;
 	}, [choices, normalized]);
-	const reload = () => {
+	const reload = react.useCallback(() => {
 		lastActionRef.current = "load";
 		lastLoadRef.current = Date.now();
 		load();
-	};
+	}, [load]);
 	react.useEffect(() => {
 		if (available) {
 			// 目录新鲜度守卫：inject 重跑会重建 load 引用触发本 effect，30s 内已有
@@ -579,28 +616,29 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			window.removeEventListener("scroll", measure, true);
 		};
 	}, [open]);
-	const resetTransient = () => {
-		setQuery("");
-	};
 	react.useEffect(() => {
 		if (!open) return;
 		searchRef.current?.focus();
 	}, [open]);
 	if (!available) return null;
-	const show = () => {
+	const show = react.useCallback(() => {
 		setOpen(true);
 		if (state.status === "error" || state.groups.length === 0 || Date.now() - lastLoadRef.current > DIRECTORY_STALE_MS) reload();
-	};
-	const close = (restoreFocus = false) => {
+	}, [state.status, state.groups.length, reload]);
+	const close = react.useCallback((restoreFocus = false) => {
 		setOpen(false);
 		setNotice(null);
-		resetTransient();
+		setQuery("");
 		if (restoreFocus) queueMicrotask(() => {
 			triggerRef.current?.focus();
 		});
-	};
+	}, []);
+	// 键盘导航：按 DOM 顺序查询菜单内全部行（data-row-key），不再依赖渲染期
+	// 收集的 ref 数组（那既阻止行级 memo，又把副作用塞进 render）。
 	const moveFocus = (offset: number): void => {
-		const items = itemRefs.current.filter((item) => item !== null);
+		const menu = menuRef.current;
+		if (menu === null) return;
+		const items = [...menu.querySelectorAll<HTMLButtonElement>('[data-row-key]')];
 		if (items.length === 0) return;
 		const active = items.findIndex((item) => item === document.activeElement);
 		items[((active < 0 ? offset > 0 ? -1 : 0 : active) + offset + items.length) % items.length]?.focus();
@@ -642,7 +680,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		// relatedTarget 为 null（窗口失焦 alt-tab / 焦点落到不可聚焦区域）也收起菜单。
 		close();
 	};
-	const choose = (selection: ModelSelection): void => {
+	const choose = react.useCallback((selection: ModelSelection): void => {
 		if (state.current?.provider === selection.provider && state.current.model === selection.model) {
 			setNotice(t("notice.already"));
 			return;
@@ -668,15 +706,15 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			if (rootRef.current !== null) close(true);
 			if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
 		});
-	};
-	const toggleCollapse = (groupId: string): void => {
+	}, [state.current, choices, select, t, directory, close, showToast]);
+	const toggleCollapse = react.useCallback((groupId: string): void => {
 		setCollapsed((prev) => {
 			const next = new Set(prev);
 			if (next.has(groupId)) next.delete(groupId);
 			else next.add(groupId);
 			return next;
 		});
-	};
+	}, []);
 	const modelLabel = currentChoice?.model.name ?? (state.status === "loading" && state.groups.length === 0 ? t("trigger.loading") : t("trigger.fallback"));
 	const providerLabel = currentChoice?.group.name;
 	const triggerLabel = effortLabel === void 0 ? modelLabel : `${modelLabel} · ${effortLabel}`;
@@ -685,46 +723,6 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		model: providerLabel === void 0 ? modelLabel : `${providerLabel} ${modelLabel}`,
 		effort: effortLabel
 	});
-	itemRefs.current.length = 0;
-	let itemIndex = 0;
-	const itemRef = () => {
-		const at = itemIndex++;
-		return (node: HTMLButtonElement | null): void => {
-			itemRefs.current[at] = node;
-		};
-	};
-	const renderModelOption = (group: ModelProviderGroup, model: ModelProviderGroup['models'][number], showProvider: boolean) => {
-		const selected = state.current?.provider === group.id && state.current.model === model.id;
-		return (
-			<button
-				ref={itemRef()}
-				type="button"
-				role="menuitemradio"
-				aria-checked={selected}
-				className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
-				title={model.name}
-				disabled={busy}
-				onClick={() => {
-					choose({
-						provider: group.id,
-						model: model.id
-					});
-				}}
-			>
-				<span className="dms-model-option-copy">
-					<span className="dms-nameRow">
-						<span className="dms-model-option-name">{model.name}</span>
-						{model.reasoning !== undefined && <span className="dms-badge" title={t("badge.reasoningHint")}>{t("badge.reasoning")}</span>}
-					</span>
-					{model.description !== undefined && <span className="dms-model-option-desc">{model.description}</span>}
-					{showProvider && <span className="dms-model-option-provider">{group.name}</span>}
-				</span>
-				<span className="dms-model-check" aria-hidden="true">
-					{selected ? IconCheck : null}
-				</span>
-			</button>
-		);
-	};
 	const renderErrorStrip = () => {
 		// Load failures only: a rejected select is announced by the Toast, which
 		// also survives closing the menu (see choose()).
@@ -809,7 +807,19 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							? hits.length === 0
 								? <div className="dms-empty">{t('search.noMatch', { query: query.trim() })}</div>
 								: <>
-									{hits.slice(0, MAX_VISIBLE_HITS).map((hit) => renderModelOption(hit.group, hit.model, true))}
+									{hits.slice(0, MAX_VISIBLE_HITS).map((hit) => (
+										<ModelOption
+											key={`${hit.group.id}\u0000${hit.model.id}`}
+											group={hit.group}
+											model={hit.model}
+											showProvider
+											selected={state.current?.provider === hit.group.id && state.current.model === hit.model.id}
+											busy={busy}
+											rowKey={`${hit.group.id}\u0000${hit.model.id}`}
+											t={t}
+											onChoose={choose}
+										/>
+									))}
 									{hits.length > MAX_VISIBLE_HITS && (
 										<div className="dms-more">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.length) })}</div>
 									)}
@@ -834,7 +844,19 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 											<span id={headingId} className="dms-groupName">{group.name}</span>
 											<span className="dms-groupCount">{group.models.length}</span>
 										</button>
-										{!isCollapsed && group.models.map((model) => renderModelOption(group, model, false))}
+										{!isCollapsed && group.models.map((model) => (
+											<ModelOption
+												key={`${group.id}\u0000${model.id}`}
+												group={group}
+												model={model}
+												showProvider={false}
+												selected={state.current?.provider === group.id && state.current.model === model.id}
+												busy={busy}
+												rowKey={`${group.id}\u0000${model.id}`}
+												t={t}
+												onChoose={choose}
+											/>
+										))}
 									</section>
 								);
 							})}
