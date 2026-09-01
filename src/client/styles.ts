@@ -469,6 +469,13 @@ export const CSS = `
 .dms-model-option:hover { background: var(--dsw-alias-fill-tertiary, rgba(120,125,140,.09)); }
 .dms-model-option-copy { min-width: 0; }
 .dms-model-option-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+/* 搜索命中片段：名称内标下划线（命中描述/供应商时不标，见 nameHit）。 */
+.dms-hit {
+  text-decoration: underline;
+  text-decoration-color: var(--dsw-static-blue-400, #4d70ff);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 .dms-model-option-desc { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-tertiary, #9296a0); font-size: 10px; }
 .dms-model-check { color: var(--dsw-static-deepseek-500, #4d70ff); font-size: 15px; text-align: center; }
 /* 方向键导航把焦点落在选项上，此前没有任何焦点指示。 */

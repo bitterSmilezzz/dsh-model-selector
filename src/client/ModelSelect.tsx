@@ -432,7 +432,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 					max={count - 1}
 					step="0.01"
 					value={preview}
-					disabled={busy}
+					aria-disabled={busy}
 					aria-label={t("menu.effort")}
 					aria-valuetext={effortName}
 					onChange={(event: react.ChangeEvent<HTMLInputElement>) => {
@@ -475,6 +475,8 @@ interface ModelOptionProps {
 	busy: boolean
 	/** 键盘导航用的稳定行标识：菜单内 `[data-row-key]` 查询即按 DOM 顺序聚焦。 */
 	rowKey: string
+	/** 搜索命中且命中落在名称内时的片段区间（高亮）；undefined/null = 不标。 */
+	nameHit?: { start: number; end: number } | null
 	t: TranslateNS<'modelSelector'>
 	onChoose: (selection: ModelSelection) => void
 }
@@ -483,7 +485,14 @@ interface ModelOptionProps {
  * 重建菜单内容，行 props（group/model 引用、selected/busy/rowKey、稳定的
  * onChoose）稳定时 React 直接跳过 reconcile，只重渲染真正变化的那行。
  */
-const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, t, onChoose }: ModelOptionProps) {
+const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, nameHit, t, onChoose }: ModelOptionProps) {
+	const hit = nameHit === undefined || nameHit === null || nameHit.start === nameHit.end
+		? null
+		: [
+			model.name.slice(0, nameHit.start),
+			model.name.slice(nameHit.start, nameHit.end),
+			model.name.slice(nameHit.end),
+		];
 	return (
 		<button
 			type="button"
@@ -492,12 +501,16 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 			data-row-key={rowKey}
 			className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
 			title={model.description === undefined ? model.name : `${model.name} — ${model.description}`}
-			disabled={busy}
+			aria-disabled={busy}
 			onClick={() => onChoose({ provider: group.id, model: model.id })}
 		>
 			<span className="dms-model-option-copy">
 				<span className="dms-nameRow">
-					<span className="dms-model-option-name">{model.name}</span>
+					<span className="dms-model-option-name">
+						{hit === null ? model.name : <>
+							{hit[0]}<span className="dms-hit">{hit[1]}</span>{hit[2]}
+						</>}
+					</span>
 					{model.reasoning !== undefined && <span className="dms-badge" title={t("badge.reasoningHint")}>{t("badge.reasoning")}</span>}
 				</span>
 				{model.description !== undefined && <span className="dms-model-option-desc">{model.description}</span>}
@@ -572,7 +585,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		const found = [];
 		for (const choice of choices) if (choice.haystack.includes(normalized)) found.push({
 			group: choice.group,
-			model: choice.model
+			model: choice.model,
+			// 名称内命中片段（高亮用）；命中落在描述/供应商标/id 时为 null 不标。
+			nameHit: (() => {
+				const at = choice.model.name.toLowerCase().indexOf(normalized);
+				return at < 0 ? null : { start: at, end: at + normalized.length };
+			})(),
 		});
 		return found;
 	}, [choices, normalized]);
@@ -847,19 +865,20 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							? hits.length === 0
 								? <div className="dms-empty">{t('search.noMatch', { query: query.trim() })}</div>
 								: <>
-									{hits.slice(0, MAX_VISIBLE_HITS).map((hit) => (
-										<ModelOption
-											key={`${hit.group.id}\u0000${hit.model.id}`}
-											group={hit.group}
-											model={hit.model}
-											showProvider
-											selected={state.current?.provider === hit.group.id && state.current.model === hit.model.id}
-											busy={busy}
-											rowKey={`${hit.group.id}\u0000${hit.model.id}`}
-											t={t}
-											onChoose={choose}
-										/>
-									))}
+										{hits.slice(0, MAX_VISIBLE_HITS).map((hit) => (
+											<ModelOption
+												key={`${hit.group.id}\u0000${hit.model.id}`}
+												group={hit.group}
+												model={hit.model}
+												showProvider
+												selected={state.current?.provider === hit.group.id && state.current.model === hit.model.id}
+												busy={busy}
+												rowKey={`${hit.group.id}\u0000${hit.model.id}`}
+												nameHit={hit.nameHit}
+												t={t}
+												onChoose={choose}
+											/>
+										))}
 									{hits.length > MAX_VISIBLE_HITS && (
 										<div className="dms-more">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.length) })}</div>
 									)}
