@@ -88,6 +88,7 @@ export const CSS = `
   width: min(280px, calc(100vw - 32px));
   overflow: hidden;
   padding: 4px 0 4px 4px;
+  box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 12px;
   background: var(--dsw-specific-menu);

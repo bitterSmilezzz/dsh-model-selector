@@ -564,8 +564,10 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			const trigger = triggerRef.current;
 			if (trigger === null) return;
 			const rect = trigger.getBoundingClientRect();
-			// 上方放不下满高菜单（含 8px 间距与余量）时改为向下弹。
-			setMenuAbove(rect.top >= MENU_MAX_HEIGHT + 20);
+			// 取上下两侧中空间更大的一侧：只有上方放不下时才向下弹。
+			// 原先要求上方空出满高（MENU_MAX_HEIGHT + 20），窗口一矮就反而把面板
+			// 挤到视口下沿外面。
+			setMenuAbove(rect.top >= window.innerHeight - rect.bottom);
 			// Downward the panel is top-anchored, so the hook's own fit would feed
 			// back on itself; clamp against the space below the trigger instead.
 			setBelowMaxHeight(Math.max(0, Math.min(MENU_MAX_HEIGHT, window.innerHeight - rect.bottom - MENU_VIEWPORT_MARGIN)));
