@@ -17,4 +17,11 @@ export declare const MENU_VIEWPORT_MARGIN = 12;
 export declare function dmsMenuAbove(triggerTop: number, triggerBottom: number, viewportHeight: number): boolean;
 /** 向下弹时按 trigger 下方空间钳位菜单高度（top-anchored，不能复用向上弹的 fit）。 */
 export declare function dmsBelowMaxHeight(triggerBottom: number, viewportHeight: number, cap: number): number;
+/**
+ * 菜单水平钳位：默认右锚定（right:0，与 seat 右缘对齐）；seat 右缘左侧放不下
+ * 整幅菜单（seat 靠输入区左下 + 窄窗口）时，返回钳到视口内的 left 值，调用方
+ * 改用 left 锚定。返回 undefined 表示保持默认右锚定。
+ * menuWidth 传菜单实际渲染宽度（offsetWidth），与 CSS `min(280px, 100vw-32px)` 解耦。
+ */
+export declare function dmsMenuLeft(rootRight: number, menuWidth: number, viewportWidth: number, margin: number): number | undefined;
 //# sourceMappingURL=menuFit.d.ts.map

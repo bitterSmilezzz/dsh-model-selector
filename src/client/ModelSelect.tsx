@@ -33,7 +33,7 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsSliderLevels, maxEffortOf } from './effort.ts'
 // Menu direction/clamp helpers likewise (pure — the direction flip and the
 // below-clamp are user-visible and were previously only browser-testable).
-import { MENU_MAX_HEIGHT, dmsMenuAbove, dmsBelowMaxHeight } from './menuFit.ts'
+import { MENU_MAX_HEIGHT, MENU_VIEWPORT_MARGIN, dmsMenuAbove, dmsBelowMaxHeight, dmsMenuLeft } from './menuFit.ts'
 // Type-only: the model catalog carrier types (moved here in dsh alpha.2).
 import type { ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
 
@@ -597,6 +597,8 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	// Hook fits a bottom-anchored overlay only — the menu growing upward.
 	const menuMaxHeight = useAnchoredMaxHeight(menuRef, MENU_MAX_HEIGHT, open);
 	const [belowMaxHeight, setBelowMaxHeight] = react.useState(MENU_MAX_HEIGHT);
+	// 水平钳位：seat 右缘放不下整幅菜单（窄窗口）时改为 left 锚定，undefined = 默认右锚定。
+	const [menuLeft, setMenuLeft] = react.useState<number | undefined>(undefined);
 	useDismissOnOutsidePointer(rootRef, open, setOpen);
 	react.useEffect(() => {
 		if (!open) return;
@@ -611,6 +613,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			// Downward the panel is top-anchored, so the hook's own fit would feed
 			// back on itself; clamp against the space below the trigger instead.
 			setBelowMaxHeight(dmsBelowMaxHeight(rect.bottom, window.innerHeight, MENU_MAX_HEIGHT));
+			// 水平：菜单实际渲染宽度为准（offsetWidth），右锚定放不下时钳到视口内。
+			const menuWidth = menuRef.current?.offsetWidth ?? 0;
+			setMenuLeft(dmsMenuLeft(rect.right, menuWidth, window.innerWidth, MENU_VIEWPORT_MARGIN));
 		};
 		measure();
 		window.addEventListener("resize", measure);
@@ -796,7 +801,10 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				<div
 					id={`${id}-menu`}
 					ref={menuRef}
-					style={{ maxHeight: menuAbove ? menuMaxHeight : belowMaxHeight }}
+					style={{
+						maxHeight: menuAbove ? menuMaxHeight : belowMaxHeight,
+						...(menuLeft === undefined ? null : { left: menuLeft, right: "auto" }),
+					}}
 					className={'dms-menu dms-menuModel' + (menuAbove ? '' : ' dms-menuBelow')}
 					aria-busy={state.status === 'loading' || busy}
 				>

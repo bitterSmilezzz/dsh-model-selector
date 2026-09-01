@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   dmsMenuAbove,
   dmsBelowMaxHeight,
+  dmsMenuLeft,
   MENU_MAX_HEIGHT,
   MENU_VIEWPORT_MARGIN,
 } from '../src/client/menuFit.ts'
@@ -40,6 +41,27 @@ test('dmsBelowMaxHeight：按下方可用空间钳位', () => {
   assert.equal(dmsBelowMaxHeight(950, 900, MENU_MAX_HEIGHT), 0)
   // cap 更小时取 cap
   assert.equal(dmsBelowMaxHeight(100, 900, 200), 200)
+})
+
+test('dmsMenuLeft：seat 右缘放得下整幅菜单时保持右锚定', () => {
+  // 桌面宽视口：seat 右缘 500，菜单 280 → 左缘 220 ≥ 边距 12，保持 right:0
+  assert.equal(dmsMenuLeft(500, 280, 1200, MENU_VIEWPORT_MARGIN), undefined)
+  // 恰好放下（左缘 == 边距）也算放得下
+  assert.equal(dmsMenuLeft(292, 280, 1200, MENU_VIEWPORT_MARGIN), undefined)
+})
+
+test('dmsMenuLeft：窄窗口钳到视口左缘边距', () => {
+  // seat 右缘 200，菜单 280 → 溢出 92px，钳到 left=12
+  assert.equal(dmsMenuLeft(200, 280, 600, MENU_VIEWPORT_MARGIN), MENU_VIEWPORT_MARGIN)
+  // seat 右缘为 0（极端）也不回负
+  assert.equal(dmsMenuLeft(0, 280, 600, MENU_VIEWPORT_MARGIN), MENU_VIEWPORT_MARGIN)
+})
+
+test('dmsMenuLeft：视口放不下菜单+双边距时优先保左缘', () => {
+  // 右缘边距保不住（vw-边距-宽 < 边距）时取左缘边距；右缘不越界由 CSS
+  // 宽度 min(280px, 100vw-32px) 兜底，这里只验证函数自身钳形。
+  assert.equal(dmsMenuLeft(150, 280, 300, MENU_VIEWPORT_MARGIN), MENU_VIEWPORT_MARGIN)
+  assert.equal(dmsMenuLeft(100, 280, 200, MENU_VIEWPORT_MARGIN), MENU_VIEWPORT_MARGIN)
 })
 
 test('常量对齐设计意图', () => {
