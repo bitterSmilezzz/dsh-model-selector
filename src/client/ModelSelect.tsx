@@ -463,7 +463,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 			</div>
 			<span className="dms-effort-value">{effortName}</span>
 			{effortDesc === undefined ? null : <span className="dms-effort-desc">{effortDesc}</span>}
-			{error === null ? null : <span className="dms-effort-sr" role="status">{error}</span>}
+			{error === null ? null : <span className="dms-sr" role="status">{error}</span>}
 			{error === null ? null : <div className="dms-effort-error">{error}</div>}
 		</div>
 	);
@@ -884,6 +884,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							</button>
 						)}
 					</div>
+					{/* 搜索结果的屏幕阅读器播报：命中总数变化时由 role=status 播报，
+					    视觉隐藏（.dms-sr）；放在 role=menu 容器外，不污染菜单内容模型。 */}
+					{hits !== null && (
+						<span className="dms-sr" role="status">{t('search.status', { count: String(hits.length) })}</span>
+					)}
 					<div className="dms-groups" id={`${id}-groups`} role="menu" aria-label={t("menu.aria")}>
 						{hits !== null
 							? hits.length === 0

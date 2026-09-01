@@ -439,7 +439,8 @@ export const CSS = `
 }
 .dms-effort.is-busy { opacity: .72; }
 .dms-effort-error { flex: 1 0 100%; margin-top: 8px; padding: 6px 10px; border-radius: 8px; color: var(--dsw-alias-state-error-primary, #c83e4d); background: var(--dsw-alias-state-error-tertiary, rgba(220,55,70,.08)); font-size: 11px; line-height: 1.5; }
-.dms-effort-sr {
+/* 视觉隐藏工具类（SR 播报/错误原文：不占布局但可被读屏读到）。 */
+.dms-sr {
   position: absolute;
   width: 1px;
   height: 1px;

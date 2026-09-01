@@ -15,6 +15,7 @@ export declare const zh: {
     "search.placeholder": string;
     "search.clearAria": string;
     "search.noMatch": string;
+    "search.status": string;
     "search.more": string;
     "group.toggleAria": string;
     "effort.providerDefault": string;
@@ -42,6 +43,7 @@ export declare const en: {
     "search.placeholder": string;
     "search.clearAria": string;
     "search.noMatch": string;
+    "search.status": string;
     "search.more": string;
     "group.toggleAria": string;
     "effort.providerDefault": string;
