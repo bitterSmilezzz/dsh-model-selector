@@ -155,12 +155,14 @@ export const CSS = `
   flex: 0 0 auto;
   padding: 0;
   border: none;
+  border-radius: 4px;
   background: transparent;
   color: inherit;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
+.dms-retry:focus-visible { box-shadow: 0 0 0 2px var(--dsw-alias-border-l3); }
 
 /* Search box pinned above the scrollable list. */
 .dms-search {
@@ -199,6 +201,11 @@ export const CSS = `
   cursor: pointer;
 }
 .dms-searchClear:hover { color: var(--dsw-alias-label-primary); }
+/* 键盘焦点此前在这三个可聚焦控件上完全隐身（上轮只补了模型行）。 */
+.dms-searchClear:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
 /* 图标组件只收 size/className，装饰性 aria-hidden 只能包一层 span；contents 让它不占布局。 */
 .dms-icon-slot { display: contents; }
 
@@ -226,6 +233,7 @@ export const CSS = `
   cursor: pointer;
 }
 .dms-groupHeader:hover { color: var(--dsw-alias-label-primary); }
+.dms-groupHeader:focus-visible { box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3); }
 .dms-groupName {
   flex: 1 1 auto;
   min-width: 0;
@@ -343,7 +351,7 @@ export const CSS = `
 .dms-effort-flare {
   position: absolute;
   z-index: 3;
-  transition: left 240ms cubic-bezier(.22,1,.36,1), filter 140ms ease;
+  transition: left 70ms linear, filter 140ms ease;
   top: 50%;
   left: var(--dms-progress);
   width: 78px;
@@ -353,7 +361,6 @@ export const CSS = `
   filter: blur(2px) saturate(1.25);
   mix-blend-mode: screen;
   transform: translate(-100%, -50%);
-  transition: left 70ms linear, filter 140ms ease;
   pointer-events: none;
 }
 .dms-effort-flare::before,

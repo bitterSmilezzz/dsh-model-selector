@@ -491,7 +491,7 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 			aria-checked={selected}
 			data-row-key={rowKey}
 			className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
-			title={model.name}
+			title={model.description === undefined ? model.name : `${model.name} — ${model.description}`}
 			disabled={busy}
 			onClick={() => onChoose({ provider: group.id, model: model.id })}
 		>
@@ -623,6 +623,18 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	react.useEffect(() => {
 		if (!open) return;
 		searchRef.current?.focus();
+		// 打开即把当前选中行滚进可视区：选中模型在长列表深处时不用手动翻找。
+		// 手动改 scrollTop 而不用 scrollIntoView，避免连带滚动页面/其它祖先容器。
+		queueMicrotask(() => {
+			const list = menuRef.current?.querySelector(".dms-groups");
+			if (list === null || list === void 0) return;
+			const row = list.querySelector('[role="menuitemradio"][aria-checked="true"]');
+			if (row === null) return;
+			const rowRect = row.getBoundingClientRect();
+			const listRect = list.getBoundingClientRect();
+			if (rowRect.top < listRect.top) list.scrollTop += rowRect.top - listRect.top;
+			else if (rowRect.bottom > listRect.bottom) list.scrollTop += rowRect.bottom - listRect.bottom;
+		});
 	}, [open]);
 	// show/close/choose/toggleCollapse 四个 useCallback 必须全部位于下方
 	// `if (!available) return null` 早退之前：hooks 数量不得随渲染分支变化
@@ -690,13 +702,19 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		// IME 组合输入期间不劫持按键：Enter 是候选上屏确认、方向键在候选窗翻页、
 		// Escape 是取消组合——此时关菜单/选首个命中/移焦点都是抢用户的输入。
 		if (event.nativeEvent.isComposing) return;
+		const target = event.target;
 		if (event.key === "Escape" && open) {
+			// 搜索框内有关键词时 Escape 先清词（输入白打太亏），再按一次才关菜单。
+			if (target instanceof HTMLInputElement && target === searchRef.current && query !== "") {
+				setNotice(null);
+				setQuery("");
+				return;
+			}
 			event.preventDefault();
 			close(true);
 			return;
 		}
 		if (!open) return;
-		const target = event.target;
 		const fromSearch = target instanceof HTMLInputElement && target === searchRef.current;
 		if ((event.key === "ArrowDown" || event.key === "ArrowUp") && (!(target instanceof HTMLInputElement) || fromSearch)) {
 			// 搜索框自动聚焦后箭头原本只在输入框内移光标（键盘导航死路）；现在
@@ -793,6 +811,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							value={query}
 							placeholder={t('search.placeholder')}
 							aria-label={t('search.placeholder')}
+							aria-controls={`${id}-groups`}
+							autoComplete="off"
+							spellCheck={false}
 							onChange={(event: react.ChangeEvent<HTMLInputElement>) => {
 								setNotice(null);
 								setQuery(event.target.value);
@@ -813,7 +834,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							</button>
 						)}
 					</div>
-					<div className="dms-groups" role="menu" aria-label={t("menu.aria")}>
+					<div className="dms-groups" id={`${id}-groups`} role="menu" aria-label={t("menu.aria")}>
 						{hits !== null
 							? hits.length === 0
 								? <div className="dms-empty">{t('search.noMatch', { query: query.trim() })}</div>
