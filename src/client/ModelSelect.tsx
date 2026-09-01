@@ -31,6 +31,9 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
 import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsSliderLevels, maxEffortOf } from './effort.ts'
+// Menu direction/clamp helpers likewise (pure — the direction flip and the
+// below-clamp are user-visible and were previously only browser-testable).
+import { MENU_MAX_HEIGHT, dmsMenuAbove, dmsBelowMaxHeight } from './menuFit.ts'
 // Type-only: the model catalog carrier types (moved here in dsh alpha.2).
 import type { ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
 
@@ -65,10 +68,6 @@ const IconClear = <IconCloseFill14 />;
 const DIRECTORY_STALE_MS = 3e4;
 /** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。 */
 const MAX_VISIBLE_HITS = 100;
-/** 菜单设计最大高度（px）；实际由 useAnchoredMaxHeight 按视口可用空间钳位。 */
-const MENU_MAX_HEIGHT = 420;
-/** 与视口边缘保留的距离；对齐 primitives 里未导出的 MARGIN。 */
-const MENU_VIEWPORT_MARGIN = 12;
 // ── 推理强度滑块（移植自 dsh-reasoning-effort：辐射特效 + 档位随模型自动适配）──
 function dmsDrawRadiation(context: CanvasRenderingContext2D, width: number, height: number, time: number, state: { progress: number; dragging: boolean }): void {
   const origin = state.progress * width;
@@ -567,10 +566,10 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			// 取上下两侧中空间更大的一侧：只有上方放不下时才向下弹。
 			// 原先要求上方空出满高（MENU_MAX_HEIGHT + 20），窗口一矮就反而把面板
 			// 挤到视口下沿外面。
-			setMenuAbove(rect.top >= window.innerHeight - rect.bottom);
+			setMenuAbove(dmsMenuAbove(rect.top, rect.bottom, window.innerHeight));
 			// Downward the panel is top-anchored, so the hook's own fit would feed
 			// back on itself; clamp against the space below the trigger instead.
-			setBelowMaxHeight(Math.max(0, Math.min(MENU_MAX_HEIGHT, window.innerHeight - rect.bottom - MENU_VIEWPORT_MARGIN)));
+			setBelowMaxHeight(dmsBelowMaxHeight(rect.bottom, window.innerHeight, MENU_MAX_HEIGHT));
 		};
 		measure();
 		window.addEventListener("resize", measure);
