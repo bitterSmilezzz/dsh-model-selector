@@ -819,16 +819,17 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 									<section key={group.id} role="group" aria-labelledby={headingId} className="dms-group">
 										<button
 											type="button"
-											id={headingId}
+											role="menuitemcheckbox"
 											className="dms-groupHeader"
 											aria-expanded={!isCollapsed}
+											aria-checked={!isCollapsed}
 											aria-label={t('group.toggleAria', { name: group.name, count: String(group.models.length) })}
 											onClick={() => toggleCollapse(group.id)}
 										>
 											<span className={`dms-groupChevron${isCollapsed ? ' dms-groupChevronClosed' : ''}`} aria-hidden="true">
 												{IconChevronDown}
 											</span>
-											<span className="dms-groupName">{group.name}</span>
+											<span id={headingId} className="dms-groupName">{group.name}</span>
 											<span className="dms-groupCount">{group.models.length}</span>
 										</button>
 										{!isCollapsed && group.models.map((model) => renderModelOption(group, model, false))}
