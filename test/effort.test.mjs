@@ -5,6 +5,7 @@ import {
   dmsCurrentModel,
   dmsEffortIndex,
   dmsEffectiveEffortIndex,
+  dmsEffortBusy,
   dmsSliderLevels,
   maxEffortOf,
   EFFORT_RANK,
@@ -100,4 +101,15 @@ test('dmsEffectiveEffortIndex：两者都不在则取中间档', () => {
 test('dmsEffectiveEffortIndex：无 reasoning（非推理模型）时不抛异常', () => {
   const s = stateOf({})
   assert.equal(dmsEffectiveEffortIndex([], s), -1)
+})
+
+test('dmsEffortBusy：自身提交中或目录上有 select 在途都算忙（滑杆拒绝交互）', () => {
+  for (const status of ['idle', 'loading', 'ready', 'error']) {
+    assert.equal(dmsEffortBusy(false, status), false, `status=${status} 且未在提交 → 不忙`)
+  }
+  // 共享目录的 select 是 last-writer-wins：模型切换在途时滑杆必须同样拒绝，
+  // 否则 effort RPC 与模型切换交错、打到旧模型上（第七轮回归防护）。
+  assert.equal(dmsEffortBusy(false, 'selecting'), true, '模型切换在途 → 忙')
+  assert.equal(dmsEffortBusy(true, 'ready'), true, '自身提交中 → 忙')
+  assert.equal(dmsEffortBusy(true, 'selecting'), true, '两者叠加 → 忙')
 })

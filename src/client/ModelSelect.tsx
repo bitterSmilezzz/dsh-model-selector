@@ -30,7 +30,7 @@ import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selec
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
-import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsSliderLevels, maxEffortOf } from './effort.ts'
+import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsSliderLevels, maxEffortOf } from './effort.ts'
 // Menu direction/clamp helpers likewise (pure — the direction flip and the
 // below-clamp are user-visible and were previously only browser-testable).
 import { MENU_MAX_HEIGHT, MENU_VIEWPORT_MARGIN, dmsMenuAbove, dmsBelowMaxHeight, dmsMenuLeft } from './menuFit.ts'
@@ -168,8 +168,11 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 	const radiationRef = react.useRef<{ progress: number; dragging: boolean; target?: number }>({ progress: 0.5, dragging: false });
 	const redrawRef = react.useRef<(() => void) | null>(null);
 	const available = state.current !== null && levels.length >= 2;
-	const busy = committing;
-	const error = localError ?? state.error;
+	const busy = dmsEffortBusy(committing, state.status);
+	// 只显示滑杆自身的失败（本地化文案）；state.error 是共享目录级错误（load/
+	// 模型切换失败都写它，且是原始 `code: message`）——前者由菜单顶部错误条、
+	// 后者由 Toast 负责，兜底到这里会双重播报并把未翻译文本漏进档位区。
+	const error = localError;
 	react.useEffect(() => {
 		if (!available || committingRef.current || draggingRef.current) return;
 		const index = dmsEffectiveEffortIndex(levels, state);
@@ -286,7 +289,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 		setDragging(false);
 	}, [levels]);
 	const commit = react.useCallback(async (raw: number): Promise<void> => {
-		if (committingRef.current) return;
+		if (dmsEffortBusy(committingRef.current, state.status)) return;
 		committingRef.current = true;
 		const previous = committedRef.current;
 		setDragging(false);
@@ -404,7 +407,10 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 			target = levels.length - 1;
 		}
 		if (target === void 0) return;
+		// 忙态（自身提交中/共享目录 select 在途）吞掉按键：必须先 preventDefault，
+		// 否则 range input 的原生步进会改 DOM value，与受控值漂移。
 		event.preventDefault();
+		if (busy) return;
 		void commit(target);
 	};
 	if (!available) return null;
@@ -442,6 +448,9 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 						showPointerPreview(raw);
 					}}
 					onPointerDown={(event: react.PointerEvent<HTMLInputElement>) => {
+						// 忙态（模型切换/提交在途）不开新拖拽：目录 select 是
+						// last-writer-wins，交错的 effort RPC 会打到旧模型上。
+						if (busy) return;
 						event.preventDefault();
 						event.currentTarget.focus();
 						beginDragging(event.currentTarget, event.pointerId, event.clientX);
@@ -620,7 +629,10 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	// 水平钳位：seat 右缘放不下整幅菜单（窄窗口）时改为 left 锚定，undefined = 默认右锚定。
 	const [menuLeft, setMenuLeft] = react.useState<number | undefined>(undefined);
 	useDismissOnOutsidePointer(rootRef, open, setOpen);
-	react.useEffect(() => {
+	// 布局生效前测量（对齐 useAnchoredMaxHeight 的 useLayoutEffect 模式）：
+	// 用 useEffect 会在首帧绘制后才翻转方向/水平锚定，向下弹或左夹取场景
+	// 菜单先按默认（向上弹 + 右锚定）画一帧再跳位，肉眼可见闪错位。
+	react.useLayoutEffect(() => {
 		if (!open) return;
 		const measure = () => {
 			const trigger = triggerRef.current;

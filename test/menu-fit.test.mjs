@@ -68,3 +68,11 @@ test('常量对齐设计意图', () => {
   assert.equal(MENU_MAX_HEIGHT, 420)
   assert.equal(MENU_VIEWPORT_MARGIN, 12)
 })
+
+test('dmsMenuLeft：seat 右缘本身越出视口右缘时也改 left 锚定（右锚定会整幅出屏）', () => {
+  // 页面横向溢出时 rect.right(650) 可大于 innerWidth(600)：旧逻辑 650-280=370
+  // ≥ 边距 → 维持右锚定，菜单画在 370..650，右侧 50px 出屏。必须改 left 锚定。
+  assert.equal(dmsMenuLeft(650, 280, 600, MENU_VIEWPORT_MARGIN), 600 - MENU_VIEWPORT_MARGIN - 280)
+  // 贴着右缘边距（== 上限）仍属放得下，保持右锚定不误伤
+  assert.equal(dmsMenuLeft(588, 280, 600, MENU_VIEWPORT_MARGIN), undefined)
+})

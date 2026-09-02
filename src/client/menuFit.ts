@@ -27,12 +27,14 @@ export function dmsBelowMaxHeight(triggerBottom: number, viewportHeight: number,
 
 /**
  * 菜单水平钳位：默认右锚定（right:0，与 seat 右缘对齐）；seat 右缘左侧放不下
- * 整幅菜单（seat 靠输入区左下 + 窄窗口）时，返回钳到视口内的 left 值，调用方
- * 改用 left 锚定。返回 undefined 表示保持默认右锚定。
+ * 整幅菜单（seat 靠输入区左下 + 窄窗口）、或 seat 右缘本身已越出视口右缘
+ * （页面横向溢出/缩放时 rect.right 可大于 innerWidth，右锚定会把整幅菜单
+ * 拖出屏外）时，返回钳到视口内的 left 值，调用方改用 left 锚定。
+ * 返回 undefined 表示保持默认右锚定。
  * menuWidth 传菜单实际渲染宽度（offsetWidth），与 CSS `min(280px, 100vw-32px)` 解耦。
  */
 export function dmsMenuLeft(rootRight: number, menuWidth: number, viewportWidth: number, margin: number): number | undefined {
-  if (rootRight - menuWidth >= margin) return void 0;
+  if (rootRight - menuWidth >= margin && rootRight <= viewportWidth - margin) return void 0;
   return Math.min(
     Math.max(margin, rootRight - menuWidth),
     Math.max(margin, viewportWidth - margin - menuWidth),

@@ -72,3 +72,13 @@ export function dmsSliderLevels(state: DirectoryState): readonly EffortLevel[] {
   const efforts = dmsCurrentModel(state)?.reasoning?.efforts
   return efforts !== void 0 && efforts.length >= 2 ? efforts : []
 }
+
+/**
+ * 滑杆是否处于忙态：自身提交中，或共享目录上有任一 select 在途
+ * （目录 select 是 last-writer-wins，模型切换在途时再发 effort RPC 会与
+ * 它交错——effort 打到旧模型上，与模型切换互相覆盖；choose() 按同一状态
+ * 拒绝了模型点击，滑杆必须同规则拒绝交互）。
+ */
+export function dmsEffortBusy(committing: boolean, status: DirectoryState['status']): boolean {
+  return committing || status === 'selecting'
+}
