@@ -2,3 +2,4 @@ node_modules/
 *.tsbuildinfo
 .DS_Store
 .codegraph/
+.alpha4-relink.json

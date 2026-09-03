@@ -650,11 +650,22 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			setMenuLeft(dmsMenuLeft(rect.right, menuWidth, window.innerWidth, MENU_VIEWPORT_MARGIN));
 		};
 		measure();
-		window.addEventListener("resize", measure);
-		window.addEventListener("scroll", measure, true);
+		let raf = 0;
+		// scroll 捕获阶段每帧触发，resize 也高频；rAF 合并同帧多次触发，
+		// passive 声明让浏览器不必等我们作 preventDefault。
+		const onViewportChange = () => {
+			if (raf !== 0) return;
+			raf = requestAnimationFrame(() => {
+				raf = 0;
+				measure();
+			});
+		};
+		window.addEventListener("resize", onViewportChange, { passive: true });
+		window.addEventListener("scroll", onViewportChange, { capture: true, passive: true });
 		return () => {
-			window.removeEventListener("resize", measure);
-			window.removeEventListener("scroll", measure, true);
+			if (raf !== 0) cancelAnimationFrame(raf);
+			window.removeEventListener("resize", onViewportChange);
+			window.removeEventListener("scroll", onViewportChange, { capture: true });
 		};
 	}, [open]);
 	react.useEffect(() => {
@@ -716,8 +727,10 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
 				return;
 			}
-			if (rootRef.current !== null) close(true);
-			if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
+			if (rootRef.current !== null) {
+				close(true);
+				if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
+			}
 		});
 	}, [busy, state.current, choices, select, t, directory, close, showToast]);
 	const toggleCollapse = react.useCallback((groupId: string): void => {
@@ -929,12 +942,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 								const isCollapsed = collapsed.has(group.id);
 								return (
 									<section key={group.id} role="group" aria-labelledby={headingId} className="dms-group">
-										<button
-											type="button"
-											role="menuitemcheckbox"
-											className="dms-groupHeader"
-											aria-expanded={!isCollapsed}
-											aria-checked={!isCollapsed}
+<button
+												type="button"
+												role="menuitem"
+												className="dms-groupHeader"
+												aria-expanded={!isCollapsed}
 											aria-label={t('group.toggleAria', { name: group.name, count: String(group.models.length) })}
 											onClick={() => toggleCollapse(group.id)}
 										>
