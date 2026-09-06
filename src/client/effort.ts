@@ -104,3 +104,16 @@ export function dmsEffortBusy(committing: boolean, status: DirectoryState['statu
 export function dmsShouldAdoptLateSuccess(committed: string, previous: string, dragging: boolean, committing: boolean, epoch: number, epochAtCommit: number): boolean {
   return committed === previous && epoch === epochAtCommit && !dragging && !committing
 }
+
+/**
+ * 拖动终止事件是否对应当前活动拖动：pointerActive 为假（拖动已结束/从未开始）
+ * 或事件 pointerId 与活动指针不一致（迟到/重复事件——典型是 pointercancel 终态
+ * 后平台补发的 pointerup）时返回 false，调用方应幂等跳过终止动作：不清状态、
+ * 不触发提交/回滚回调。pointerId 缺省（blur 兜底提交，无事件对象）时只要求
+ * 拖动仍在进行中。
+ */
+export function dmsIsActiveDrag(pointerActive: boolean, activePointerId: number | null, pointerId: number | undefined): boolean {
+  if (!pointerActive) return false
+  if (pointerId !== void 0 && activePointerId !== pointerId) return false
+  return true
+}

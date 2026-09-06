@@ -7,9 +7,11 @@
  * 浏览器测试。
  */
 
-/** 菜单设计最大高度（px）；实际由 useAnchoredMaxHeight 按视口可用空间钳位。 */
+/** 菜单设计最大高度（px）；实际由 useAnchoredMaxHeight 按视口可用空间钳位。
+ * 调法：调大允许更高菜单（矮视口下仍会被钳到视口内），调小菜单更矮。 */
 export const MENU_MAX_HEIGHT = 420;
-/** 与视口边缘保留的距离；对齐 primitives 里未导出的 MARGIN。 */
+/** 与视口边缘保留的距离；对齐 primitives 里未导出的 MARGIN。
+ * 改动同时影响向上/向下弹与水平钳位的边距，需与官方 MARGIN 意图保持一致。 */
 export const MENU_VIEWPORT_MARGIN = 12;
 
 /**

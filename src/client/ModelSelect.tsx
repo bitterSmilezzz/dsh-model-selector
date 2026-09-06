@@ -78,12 +78,17 @@ const IconClear = <IconCloseFill14 />;
 * How long a successfully loaded directory snapshot is trusted before the
 * menu re-fetches it over RPC. The snapshot lives in the per-session store,
 * so reopening the menu within this window costs zero RPC and zero re-render.
+* 调法：调大 → 打开更省（RPC/重渲染都免），但目录侧改动要等窗口过期才可见；
+* 调小 → 目录更新更实时。目录内容由官方 modelDirectories 推送，本值只影响
+* 打开瞬间是否信任快照。
 */
 const DIRECTORY_STALE_MS = 3e4;
-/** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。 */
+/** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。
+ * 调法：调大 → 宽泛搜索看到更多命中（渲染与搜索成本线性上升）；调小 → 更省。 */
 const MAX_VISIBLE_HITS = 100;
 /** effort select RPC 的超时护栏：官方 select 无超时契约，RPC 永久挂起时
- * 必须释放滑杆的 committing 锁并回滚，否则滑杆被锁死到菜单关闭。 */
+ * 必须释放滑杆的 committing 锁并回滚，否则滑杆被锁死到菜单关闭。
+ * 调法：后端/网络慢时调大避免误回滚（滑杆锁死时间随之变长）；调小更早释放交互。 */
 const EFFORT_COMMIT_TIMEOUT_MS = 12e3;
 // ── 推理强度滑块（移植自 dsh-reasoning-effort：辐射特效 + 档位随模型自动适配）──
 // 绘制与动画循环见 ./effortCanvas.ts（dmsDrawRadiation / useEffortCanvas），
@@ -518,8 +523,16 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	// 菜单高度按视口实测钳位（原先 CSS 写死 min(420px, 100vh - 96px)），
 	// composer 变高/窗口变小时自动收，不再溢出。
 	const menuRef = react.useRef<HTMLDivElement | null>(null);
-	// Hook fits a bottom-anchored overlay only — the menu growing upward.
-	const menuMaxHeight = useAnchoredMaxHeight(menuRef, MENU_MAX_HEIGHT, open);
+	// useAnchoredMaxHeight 只适配「底边固定、向上生长」的底部锚定浮层：fit 读的是
+	// 浮层自身底缘与视口顶缘的距离。向下弹（menuAbove=false）时面板改为顶边固定，
+	// hook 度量的底缘是向下弹出后的位置，返回值在渲染处（maxHeight 三目）被忽略——
+	// 继续挂监听只白付测量：每次 scroll/resize 都未节流 getBoundingClientRect +
+	// setState 重渲染。向下弹期间把被测 ref 换成恒 null 的空 ref，hook 的 layout
+	// effect 因 el === null 整体跳过（不注册监听、不测量）；方向翻回向上时 ref 换回
+	// menuRef，effect 因 ref 身份变化重跑并立即 fit——翻向后的钳位是新鲜测量
+	// （原实现 signal 不变不重跑，翻回时用的还是向下弹期间留下的旧值）。
+	const inactiveMenuRef = react.useRef<HTMLDivElement | null>(null);
+	const menuMaxHeight = useAnchoredMaxHeight(menuAbove ? menuRef : inactiveMenuRef, MENU_MAX_HEIGHT, open);
 	const [belowMaxHeight, setBelowMaxHeight] = react.useState(MENU_MAX_HEIGHT);
 	// 水平钳位：seat 右缘放不下整幅菜单（窄窗口）时改为 left 锚定，undefined = 默认右锚定。
 	const [menuLeft, setMenuLeft] = react.useState<number | undefined>(undefined);

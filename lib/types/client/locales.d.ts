@@ -1,9 +1,9 @@
 /**
-* `modelSelector` namespace dictionaries for the enhanced model seat.
-*
-* Simplified Chinese is the key-set source of truth; the English dictionary is
-* checked complete against it. Product copy is Chinese-first per repo style.
-*/
+ * `modelSelector` namespace dictionaries for the enhanced model seat.
+ *
+ * Simplified Chinese is the key-set source of truth; the English dictionary is
+ * checked complete against it. Product copy is Chinese-first per repo style.
+ */
 export declare const zh: {
     "trigger.fallback": string;
     "trigger.loading": string;

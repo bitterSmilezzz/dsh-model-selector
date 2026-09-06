@@ -8,7 +8,7 @@
  * hook 本身不读组件状态，拖动中途组件重渲染（preview setState）不会中断拖动。
  */
 import * as react from 'react'
-import { dmsPointerRaw } from './effort.ts'
+import { dmsIsActiveDrag, dmsPointerRaw } from './effort.ts'
 
 export interface EffortDragHandlers {
   onPointerDown: (event: react.PointerEvent<HTMLInputElement>) => void
@@ -83,8 +83,7 @@ export function useEffortDrag({ levelCount, canStart, onPreview, onCommit, onRol
   }, [showPointerPreview]);
 
   const stopDragging = react.useCallback((input: HTMLInputElement, pointerId?: number, clientX?: number): void => {
-    if (!pointerActiveRef.current) return;
-    if (pointerId !== void 0 && activePointerIdRef.current !== pointerId) return;
+    if (!dmsIsActiveDrag(pointerActiveRef.current, activePointerIdRef.current, pointerId)) return;
     const raw = clientX === void 0 ? lastRawRef.current : rawFromPointer(input, clientX, callbacksRef.current.levelCount(), lastRawRef.current);
     lastRawRef.current = raw;
     pointerActiveRef.current = false;
@@ -99,11 +98,11 @@ export function useEffortDrag({ levelCount, canStart, onPreview, onCommit, onRol
 
   // 取消路径的公共清理：pointercancel 是终态事件（规范上不再有该指针的后续事件），
   // 但部分平台/浏览器在 cancel 后仍会补发 pointerup——不清干净会把「取消」误当成
-  // 正常提交。此函数校验活动指针、清空全部拖动状态、回滚不提交，幂等（第二次调用
-  // 因 activePointerIdRef 已清空而直接返回）。blur 兜底共用 stopDragging 的
-  // pointerActiveRef 守卫，双触发路径不会产生重复 commit。
+  // 正常提交。此函数经 dmsIsActiveDrag 校验活动指针、清空全部拖动状态、回滚不提交，
+  // 幂等（第二次调用因指针已清空而直接返回）。blur 兜底共用 stopDragging 的同一
+  // 校验，双触发路径不会产生重复 commit。
   const cancelDragging = (pointerId: number): void => {
-    if (activePointerIdRef.current !== pointerId) return;
+    if (!dmsIsActiveDrag(pointerActiveRef.current, activePointerIdRef.current, pointerId)) return;
     pointerActiveRef.current = false;
     activePointerIdRef.current = null;
     draggingRef.current = false;
@@ -112,6 +111,11 @@ export function useEffortDrag({ levelCount, canStart, onPreview, onCommit, onRol
   };
 
   // 全局兜底监听：拖动中指针移出输入条/菜单仍留在窗口内时，move/up 由 window 捕获。
+  // 只在拖动进行中挂载（pointerdown 命中 → dragging=true），up/cancel/blur 结束
+  // 拖动（dragging=false）即卸载——菜单开着但不拖动时窗口上不挂任何监听。pointercancel
+  // 是终态，平台随后补发的 pointerup 要么因监听已卸载而收不到、要么走 stopDragging
+  // 的 dmsIsActiveDrag 守卫幂等跳过，与常驻挂载时语义一致。挂载缝隙（pointerdown
+  // 到 effect 落地之间）内指针仍在输入条上，由输入条自身的 JSX 事件兜住，无事件丢失。
   const globalMoveRef = react.useRef<(event: PointerEvent) => void>(() => {});
   const globalEndRef = react.useRef<(event: PointerEvent) => void>(() => {});
   const globalCancelRef = react.useRef<(event: PointerEvent) => void>(() => {});
@@ -125,6 +129,7 @@ export function useEffortDrag({ levelCount, canStart, onPreview, onCommit, onRol
   };
   globalCancelRef.current = (event: PointerEvent): void => cancelDragging(event.pointerId);
   react.useEffect(() => {
+    if (!dragging) return;
     const move = (event: PointerEvent) => globalMoveRef.current(event);
     const end = (event: PointerEvent) => globalEndRef.current(event);
     const cancel = (event: PointerEvent) => globalCancelRef.current(event);
@@ -136,7 +141,7 @@ export function useEffortDrag({ levelCount, canStart, onPreview, onCommit, onRol
       window.removeEventListener("pointerup", end, true);
       window.removeEventListener("pointercancel", cancel, true);
     };
-  }, []);
+  }, [dragging]);
 
   const handlers: EffortDragHandlers = {
     onPointerDown: (event: react.PointerEvent<HTMLInputElement>) => {

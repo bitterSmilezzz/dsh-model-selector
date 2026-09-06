@@ -6,6 +6,7 @@ import {
   dmsEffortIndex,
   dmsEffectiveEffortIndex,
   dmsEffortBusy,
+  dmsIsActiveDrag,
   dmsShouldAdoptLateSuccess,
   dmsSliderLevels,
   dmsPointerRaw,
@@ -160,4 +161,20 @@ test('dmsPointerRaw：输入条退化时保持当前值（宽度 ≤ 0 或档位
   assert.equal(dmsPointerRaw(250, 100, -5, 4, 2), 2)
   assert.equal(dmsPointerRaw(250, 100, 300, 1, 1), 1)
   assert.equal(dmsPointerRaw(250, 100, 300, 0, 0), 0)
+})
+
+test('dmsIsActiveDrag：非活动期任何终止事件都幂等跳过（cancel 后补发的 pointerup）', () => {
+  // pointercancel 是终态：之后平台补发的 pointerup 必须被当作迟到事件忽略，
+  // 否则「取消」会被误当成正常提交（第一轮审查的回归场景）。
+  assert.equal(dmsIsActiveDrag(false, null, 7), false, '拖动未开始')
+  assert.equal(dmsIsActiveDrag(false, null, undefined), false, '无拖动时 blur 兜底也不提交')
+})
+
+test('dmsIsActiveDrag：pointerId 与活动指针不一致视为迟到事件跳过', () => {
+  assert.equal(dmsIsActiveDrag(true, 3, 5), false, '另一指针的事件')
+})
+
+test('dmsIsActiveDrag：活动指针匹配或 blur 兜底（无 pointerId）时放行', () => {
+  assert.equal(dmsIsActiveDrag(true, 3, 3), true)
+  assert.equal(dmsIsActiveDrag(true, 3, undefined), true)
 })

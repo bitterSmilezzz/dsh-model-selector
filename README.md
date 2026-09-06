@@ -64,6 +64,8 @@ pnpm typecheck   # 双 program（host + client）
 pnpm build       # tsc host + tsdown client bundle
 ```
 
+调优常量集中在 `src/client/ModelSelect.tsx` 顶部（`DIRECTORY_STALE_MS` / `MAX_VISIBLE_HITS` / `EFFORT_COMMIT_TIMEOUT_MS`）与 `src/client/menuFit.ts`（`MENU_MAX_HEIGHT` / `MENU_VIEWPORT_MARGIN`），含义与调法见各常量旁注释；刻意不做配置化——纯 UI 插件无 settings namespace，不为此引入配置基建。
+
 ## License
 
 MIT
