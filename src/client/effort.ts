@@ -95,9 +95,12 @@ export function dmsEffortBusy(committing: boolean, status: DirectoryState['statu
 /**
  * 超时回滚后 select 迟到成功是否应采纳并同步 UI：
  * 只有当自回滚以来没有任何新的提交改写 committedRef（仍等于回滚前的档位）、
- * 且当前无拖动/提交在途时，迟到结果才仍对应当前唯一的意图链——此时 UI 处于
- * 「回滚但后端已生效」的错位态，应补一次同步而不是保持回滚。否则以新操作链为准。
+ * 提交纪元未推进（epoch === epochAtCommit，即期间没有发起过新提交——提交失败
+ * 回滚后 committedRef 会回到与上一轮回滚相同的值，值比较无法区分「无新提交」
+ * 与「新提交失败回滚」，纪元才能区分）、且当前无拖动/提交在途时，迟到结果才
+ * 仍对应当前唯一的意图链——此时 UI 处于「回滚但后端已生效」的错位态，应补
+ * 一次同步而不是保持回滚。否则以新操作链为准。
  */
-export function dmsShouldAdoptLateSuccess(committed: string, previous: string, dragging: boolean, committing: boolean): boolean {
-  return committed === previous && !dragging && !committing
+export function dmsShouldAdoptLateSuccess(committed: string, previous: string, dragging: boolean, committing: boolean, epoch: number, epochAtCommit: number): boolean {
+  return committed === previous && epoch === epochAtCommit && !dragging && !committing
 }

@@ -68,7 +68,12 @@ export function useEffortDrag({ levelCount, canStart, onPreview, onCommit, onRol
     showPointerPreview(input, clientX);
     try {
       if (!input.hasPointerCapture(pointerId)) input.setPointerCapture(pointerId);
-    } catch {
+    } catch (cause) {
+      // 预期内失败：setPointerCapture 在元素已卸载 / 指针已失效等场景会抛
+      // NotFoundError/InvalidStateError。影响仅限「指针拖出输入条后由元素继续
+      // 接收事件」这条优化路径——window 捕获阶段的 move/up 兜底监听仍然生效，
+      // 拖动不会因此中断，无需恢复；留 debug 痕迹便于排查真实异常。
+      console.debug("[dms-effort] setPointerCapture failed", cause);
     }
   }, [showPointerPreview]);
 

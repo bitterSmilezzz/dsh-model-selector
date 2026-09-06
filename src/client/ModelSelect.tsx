@@ -103,6 +103,13 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 	const committingRef = react.useRef(false);
 	const previewRef = react.useRef(0);
 	const draggingRef = react.useRef(false);
+	// 提交超时定时器句柄 + 挂载标志：菜单关闭（EffortSlider 卸载）时由 cleanup
+	// clearTimeout 并置 unmounted——迟到成功采纳/超时回滚的 setState 只在挂载期
+	// 跑，卸载后不再触碰 React 状态，定时器也不必在卸载后继续空转。
+	const commitTimerRef = react.useRef<number | null>(null);
+	const mountedRef = react.useRef(false);
+	// 提交纪元：单调递增，迟到采纳判据靠它区分「无新提交」与「新提交失败回滚」。
+	const commitEpochRef = react.useRef(0);
 	// 辐射状态由组件持有：preview 变化/拖动时更新 target/dragging 驱动重绘；
 	// progress 惰性对齐当前档位（打开菜单首帧即正确，无中间态缓动）。useRef
 	// 初始化表达式每次渲染都会求值但仅首帧生效，这里取首次渲染的档位作起点。
@@ -134,6 +141,19 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 		redrawRef.current = redraw;
 		return () => { redrawRef.current = null; };
 	}, [redraw]);
+	// 卸载清理：迟到的 select settle 不再 setState（迟到成功采纳/超时回滚的
+	// setState 都经 mountedRef 守卫）；未决的超时定时器直接清除——组件已卸载，
+	// 回滚/采纳都无人可见，定时器没有存在的意义。
+	react.useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+			if (commitTimerRef.current !== null) {
+				window.clearTimeout(commitTimerRef.current);
+				commitTimerRef.current = null;
+			}
+		};
+	}, []);
 	const showPointerPreview = react.useCallback((raw: number): void => {
 		previewRef.current = raw;
 		setPreview(raw);
@@ -156,6 +176,11 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 		if (next === void 0 || next === committedRef.current) return;
 		committingRef.current = true;
 		const previous = committedRef.current;
+		// 提交纪元：每次发起新提交单调递增。迟到采纳判据用它区分「无新提交」与
+		// 「新提交失败回滚」——两者 committedRef 都会回到 previous，值比较无法
+		// 区分，纪元未变才说明迟到结果仍属当前唯一意图链。
+		commitEpochRef.current += 1;
+		const epochAtCommit = commitEpochRef.current;
 		// 注意：这里不重置 dragging——commit 的唯二入口是拖动结束（stopDragging
 		// 已先 setDragging(false)）与键盘（本就非拖拽），无需防御性复位。
 		setCommitting(true);
@@ -177,17 +202,23 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 				const timer = window.setTimeout(() => {
 					if (settled) return;
 					settled = true;
+					commitTimerRef.current = null;
 					reject(new Error(t("effort.timeout")));
 				}, EFFORT_COMMIT_TIMEOUT_MS);
+				// 定时器句柄进 ref：菜单关闭（本组件卸载）时由 cleanup 直接
+				// clearTimeout，不再依赖 Promise 闭包把定时器活到 select 迟到 settle。
+				commitTimerRef.current = timer;
 				select({ provider: current.provider, model: current.model, reasoningEffort: next }).then(
 					(accepted) => {
 						if (settled) {
 							// 迟到成功且实际生效：committedRef 还是回滚前的 previous
-							// （期间没有新的提交/拖动改写它），说明回滚态对应用户当前
-							// 唯一意图链，后端已确认新档位——补一次 UI 同步，消除
-							// 「UI 回滚、后端已改档」的错位；否则以新操作链为准不覆盖。
+							// 且提交纪元未推进（期间没有新的提交/拖动改写它），说明
+							// 回滚态对应用户当前唯一意图链，后端已确认新档位——补一次
+							// UI 同步，消除「UI 回滚、后端已改档」的错位；否则以新
+							// 操作链为准不覆盖（新提交失败回滚后 committedRef 值与
+							// 上一轮相同，纪元未推进才说明没有新提交）。
 							// 判定收敛到 dmsShouldAdoptLateSuccess（effort.ts，node 可测）。
-							if (accepted && dmsShouldAdoptLateSuccess(committedRef.current, previous, draggingRef.current, committingRef.current)) {
+							if (accepted && mountedRef.current && dmsShouldAdoptLateSuccess(committedRef.current, previous, draggingRef.current, committingRef.current, commitEpochRef.current, epochAtCommit)) {
 								committedRef.current = next;
 								previewRef.current = index;
 								setEffort(next);
@@ -198,31 +229,37 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 						}
 						settled = true;
 						window.clearTimeout(timer);
+						commitTimerRef.current = null;
 						resolve(accepted);
 					},
 					(cause: unknown) => {
 						if (settled) return;
 						settled = true;
 						window.clearTimeout(timer);
+						commitTimerRef.current = null;
 						reject(cause);
 					},
 				);
 			});
 			if (!ok) throw new Error(t("effort.failed"));
-			committedRef.current = next;
-			previewRef.current = index;
-			setEffort(next);
-			setPreview(index);
+			if (mountedRef.current) {
+				committedRef.current = next;
+				previewRef.current = index;
+				setEffort(next);
+				setPreview(index);
+			}
 		} catch (cause) {
 			const restore = Math.max(0, dmsEffortIndex(levels, previous));
 			committedRef.current = previous;
 			previewRef.current = restore;
-			setEffort(previous);
-			setPreview(restore);
-			setLocalError(cause instanceof Error ? cause.message : String(cause));
+			if (mountedRef.current) {
+				setEffort(previous);
+				setPreview(restore);
+				setLocalError(cause instanceof Error ? cause.message : String(cause));
+			}
 		} finally {
 			committingRef.current = false;
-			setCommitting(false);
+			if (mountedRef.current) setCommitting(false);
 		}
 	}, [levels, select, state, t]);
 	// 指针拖动状态机（pointer 生命周期 + window 兜底监听）在 effortDrag.ts；
@@ -486,7 +523,6 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const [belowMaxHeight, setBelowMaxHeight] = react.useState(MENU_MAX_HEIGHT);
 	// 水平钳位：seat 右缘放不下整幅菜单（窄窗口）时改为 left 锚定，undefined = 默认右锚定。
 	const [menuLeft, setMenuLeft] = react.useState<number | undefined>(undefined);
-	useDismissOnOutsidePointer(rootRef, open, setOpen);
 	// 布局生效前测量（对齐 useAnchoredMaxHeight 的 useLayoutEffect 模式）：
 	// 用 useEffect 会在首帧绘制后才翻转方向/水平锚定，向下弹或左夹取场景
 	// 菜单先按默认（向上弹 + 右锚定）画一帧再跳位，肉眼可见闪错位。
@@ -577,6 +613,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			expandedProviderRef.current = null;
 			return;
 		}
+		// 搜索命中渲染期间不滚动/不自动展开：命中列表替换了分组 DOM，滚动测量
+		// 没有意义；且每次击键 hits 引用都变化——提前返回避免每次击键重跑
+		// querySelector×2 + getBoundingClientRect×3 的定位测量（当前模型命中时
+		// 还会写 scrollTop）。查询清空（hits 回 null）后本 effect 因 deps 变化
+		// 重跑，滚动/展开行为与首次打开、异步加载完成场景保持一致。
+		if (hits !== null) return;
 		const provider = state.current?.provider ?? null;
 		if (provider !== null && provider !== expandedProviderRef.current && collapsed.has(provider)) {
 			expandedProviderRef.current = provider;
@@ -604,6 +646,13 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			triggerRef.current?.focus();
 		});
 	}, []);
+	// 外部 pointerdown 关闭走 close() 的清理语义（清搜索词 + notice），与
+	// Escape/失焦/选中成功一致——直接 setOpen(false) 会留下次打开时的残留词与
+	// 旧提示。hook 只以 false 调用 setter，忽略参数即可。
+	const dismissOnOutsidePointer = react.useCallback(() => {
+		close();
+	}, [close]);
+	useDismissOnOutsidePointer(rootRef, open, dismissOnOutsidePointer);
 	const choose = react.useCallback((selection: ModelSelection): void => {
 		if (busy) return;
 		if (state.current?.provider === selection.provider && state.current.model === selection.model) {
@@ -622,17 +671,50 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		// 自动拉档只有「高于模型自己声明的默认档」时才算替用户做了决定，此时播报落点。
 		const autoRaised = effort !== void 0 && effort !== target?.model.reasoning?.defaultEffort;
 		const autoName = target?.model.reasoning?.efforts.find((level) => level.id === effort)?.name ?? effort ?? "";
-		select(full).then((accepted) => {
-			if (!accepted) {
-				const message = directory.getSnapshot().error;
-				showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
-				return;
+		// 超时护栏与 EffortSlider.commit() 同款：目录 select 无超时契约，RPC 永久
+		// 挂起时若不加护栏，status='selecting' 由 store 持有、本插件无法复位，交互
+		// 永久锁死。超时/拒绝都按切换失败播报 Toast（复用既有文案，不新增 key）；
+		// 不强行复位 store——目录 settle 后状态自然回到 ready，与 effort commit 一致。
+		// 迟到的 settle 一律忽略：成功与否都会经共享目录写回，UI 无需再动作。
+		void (async () => {
+			try {
+				const accepted = await new Promise<boolean>((resolve, reject) => {
+					let settled = false;
+					const timer = window.setTimeout(() => {
+						if (settled) return;
+						settled = true;
+						reject(new Error(t("notice.selectFailed")));
+					}, EFFORT_COMMIT_TIMEOUT_MS);
+					select(full).then(
+						(ok) => {
+							if (settled) return;
+							settled = true;
+							window.clearTimeout(timer);
+							resolve(ok);
+						},
+						(cause: unknown) => {
+							if (settled) return;
+							settled = true;
+							window.clearTimeout(timer);
+							reject(cause);
+						},
+					);
+				});
+				if (!accepted) {
+					const message = directory.getSnapshot().error;
+					showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
+					return;
+				}
+				if (rootRef.current !== null) {
+					close(true);
+					if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
+				}
+			} catch {
+				// 超时 / select 拒绝：都按切换失败播报（防御性 catch 同时杜绝
+				// unhandled rejection——未来注入面变更也不会让它漏出去）。
+				showToast(t("notice.selectFailed"));
 			}
-			if (rootRef.current !== null) {
-				close(true);
-				if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
-			}
-		});
+		})();
 	}, [busy, state.current, choices, select, t, directory, close, showToast]);
 	const toggleCollapse = react.useCallback((groupId: string): void => {
 		setCollapsed((prev) => {
