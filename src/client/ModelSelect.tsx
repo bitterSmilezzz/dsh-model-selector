@@ -38,6 +38,9 @@ import { useEffortDrag } from './effortDrag.ts'
 // Menu direction/clamp helpers likewise (pure — the direction flip and the
 // below-clamp are user-visible and were previously only browser-testable).
 import { MENU_MAX_HEIGHT, MENU_VIEWPORT_MARGIN, dmsMenuAbove, dmsBelowMaxHeight, dmsMenuLeft } from './menuFit.ts'
+// roving tabindex 的默认落点决策（纯函数，node 可测——行键集合与选中行的
+// 组合分支不值得只在浏览器里验证）。
+import { dmsDefaultRowKey } from './roving.ts'
 // Type-only: the model catalog carrier types (moved here in dsh alpha.2).
 import type { ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
 
@@ -363,6 +366,10 @@ interface ModelOptionProps {
 	busy: boolean
 	/** 键盘导航用的稳定行标识：菜单内 `[data-row-key]` 查询即按 DOM 顺序聚焦。 */
 	rowKey: string
+	/** roving tabindex：true = 当前活动行（唯一可 Tab 到的模型行，其余 -1）。 */
+	active: boolean
+	/** 行聚焦回调（箭头导航/点击/程序化 focus 都经它同步活动行键）。 */
+	onRowFocus: (key: string) => void
 	/** 搜索命中且命中落在名称内时的片段区间（高亮）；undefined/null = 不标。 */
 	nameHit?: { start: number; end: number } | null
 	t: TranslateNS<'modelSelector'>
@@ -377,7 +384,7 @@ interface ModelOptionProps {
  * 但 100 条命中里绝大多数命中区间不变——按值比较 start/end，值相同即跳过
  * 重渲染，搜索才不卡顿。
  */
-const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, nameHit, t, onChoose }: ModelOptionProps) {
+const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, active, onRowFocus, nameHit, t, onChoose }: ModelOptionProps) {
 	const hit = nameHit === undefined || nameHit === null || nameHit.start === nameHit.end
 		? null
 		: [
@@ -391,9 +398,11 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 			role="menuitemradio"
 			aria-checked={selected}
 			data-row-key={rowKey}
+			tabIndex={active ? 0 : -1}
 			className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
 			title={model.description === undefined ? model.name : `${model.name} — ${model.description}`}
 			aria-disabled={busy}
+			onFocus={() => onRowFocus(rowKey)}
 			onClick={() => onChoose({ provider: group.id, model: model.id })}
 		>
 			<span className="dms-model-option-copy">
@@ -420,6 +429,8 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 	if (prev.selected !== next.selected) return false;
 	if (prev.busy !== next.busy) return false;
 	if (prev.rowKey !== next.rowKey) return false;
+	if (prev.active !== next.active) return false;
+	if (prev.onRowFocus !== next.onRowFocus) return false;
 	if (prev.t !== next.t) return false;
 	if (prev.onChoose !== next.onChoose) return false;
 	// 引用相同（含都是 null/undefined）即视为未变化；否则按值比较命中区间。
@@ -446,6 +457,13 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const [query, setQuery] = react.useState("");
 	const [collapsed, setCollapsed] = react.useState<Set<string>>(() => new Set());
 	const [notice, setNotice] = react.useState<string | null>(null);
+	// roving tabindex 的活动行键：全列表只有这一行 tabindex=0（其余 -1，仅方向键
+	// 可达），Tab 从搜索框进列表落在它上面。行焦点移动经 onRowFocus 更新；行集合
+	// 变化（打开/搜索/折叠/选中迁移）时由下方 effect 重置到默认落点。
+	const [activeRowKey, setActiveRowKey] = react.useState<string | null>(null);
+	const onRowFocus = react.useCallback((key: string): void => {
+		setActiveRowKey(key);
+	}, []);
 	// 菜单内 notice 会随 close() 一起清掉，失败原因必须落在菜单外的瞬时横幅上
 	// （官方 seat 正是用 Toast 播报 select 拒绝）。seq 递增让同一段文案可重播。
 	const [toast, setToast] = react.useState<{ seq: number; text: string; failed: boolean } | null>(null);
@@ -505,6 +523,24 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		}
 		return { items, total };
 	}, [choices, normalized]);
+	// roving tabindex 的默认落点（Tab 从搜索框进列表的停靠行）：选中行优先、
+	// 其次首个可见模型行、全折叠时回退首个组头。纯决策在 roving.ts（node 可测）。
+	const defaultRowKey = react.useMemo(() => dmsDefaultRowKey({
+		hitKeys: hits === null ? null : hits.items.map((h) => `${h.group.id}\u0000${h.model.id}`),
+		modelKeys: state.groups.flatMap((g) => (collapsed.has(g.id) ? [] : g.models.map((m) => `${g.id}\u0000${m.id}`))),
+		headerKeys: state.groups.map((g) => `header:${g.id}`),
+		selectedKey: state.current === null ? null : `${state.current.provider}\u0000${state.current.model}`,
+	}), [hits, state.groups, collapsed, state.current]);
+	// 行集合/选中变化时把 tabindex=0 的默认行同步到当前渲染集；菜单关闭清空。
+	// 焦点已在行上（onRowFocus 改写过 activeRowKey）时，只要默认落点没变本
+	// effect 不重跑，活动行保持用户最后聚焦的那行。
+	react.useEffect(() => {
+		if (!open) {
+			setActiveRowKey(null);
+			return;
+		}
+		setActiveRowKey(defaultRowKey);
+	}, [open, defaultRowKey]);
 	const reload = react.useCallback(() => {
 		lastActionRef.current = "load";
 		lastLoadRef.current = Date.now();
@@ -659,13 +695,19 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			triggerRef.current?.focus();
 		});
 	}, []);
-	// 外部 pointerdown 关闭走 close() 的清理语义（清搜索词 + notice），与
-	// Escape/失焦/选中成功一致——直接 setOpen(false) 会留下次打开时的残留词与
-	// 旧提示。hook 只以 false 调用 setter，忽略参数即可。
+	// 外部 pointerdown 关闭与 Escape 一致走 close(true)：搜索框随菜单卸载后
+	// 焦点落回 trigger（此前焦点直接掉 body）。hook 只以 false 调用 setter，
+	// 忽略参数即可。
 	const dismissOnOutsidePointer = react.useCallback(() => {
-		close();
+		close(true);
 	}, [close]);
 	useDismissOnOutsidePointer(rootRef, open, dismissOnOutsidePointer);
+	// locked 翻转（会话移除/失活/页面 inert 等）时若菜单还开着直接关闭：
+	// trigger 已禁用，挂着的菜单没有可交互入口；close() 顺带清掉搜索词与
+	// notice。close 引用稳定（[] deps），effect 只在 locked/open 变化时重跑。
+	react.useEffect(() => {
+		if (locked && open) close();
+	}, [locked, open, close]);
 	const choose = react.useCallback((selection: ModelSelection): void => {
 		if (busy) return;
 		if (state.current?.provider === selection.provider && state.current.model === selection.model) {
@@ -763,10 +805,15 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		if (event.nativeEvent.isComposing) return;
 		const target = event.target;
 		if (event.key === "Escape" && open) {
-			// 搜索框内有关键词时 Escape 先清词（输入白打太亏），再按一次才关菜单。
-			if (target instanceof HTMLInputElement && target === searchRef.current && query !== "") {
+			// Escape 分层：查询非空且焦点在菜单内时，第一按只清词（搜索框内清词
+			// 焦点留在原处；列表内清词会让命中行卸载，焦点还回搜索框，避免掉
+			// body），再按一次才关菜单。IME 组合输入在函数入口已被 isComposing
+			// 挡掉，这里不需要重复守卫。
+			if (query !== "" && rootRef.current?.contains(document.activeElement) === true) {
+				const fromSearch = target instanceof HTMLInputElement && target === searchRef.current;
 				setNotice(null);
 				setQuery("");
+				if (!fromSearch) searchRef.current?.focus();
 				return;
 			}
 			event.preventDefault();
@@ -841,6 +888,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			<button type="button" className="dms-retry" onClick={reload}>{t("action.reload")}</button>
 		</div>
 	));
+	// 列表区的两个空态：空态播报节点必须放在 role=menu 容器外（menu 内容模型
+	// 只允许菜单节点），视觉位置由 .dms-groupsFill 的弹性占位补回（与 .dms-groups
+	// 同款 flex 布局），空态时列表容器本身不渲染。
+	const noHits = hits !== null && hits.items.length === 0;
+	const noModels = hits === null && state.status === 'ready' && choices.length === 0;
 	return (
 		<div ref={rootRef} className="dms-root" onKeyDown={onRootKeyDown} onBlur={onBlur}>
 			<button
@@ -913,44 +965,54 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					{hits !== null && (
 						<span className="dms-sr" role="status">{t('search.status', { count: String(hits.total) })}</span>
 					)}
+					{/* 空态（无命中/无模型）与「仅显示前 N 条」note 全部在 role=menu
+					    容器外：menu 的直接内容模型只允许 menuitem/group 等菜单节点，
+					    live region 会被菜单导航跳过、静态说明不该冒充菜单项。视觉
+					    位置由 .dms-groupsFill（空态）与容器后的 .dms-more 保持。 */}
+					{noHits && (
+						<div className="dms-empty dms-groupsFill" role="status">{t('search.noMatch', { query: query.trim() })}</div>
+					)}
+					{noModels && (
+						<div className="dms-empty dms-groupsFill" role="status">{t('empty.models')}</div>
+					)}
+					{!noHits && !noModels && (
 					<div className="dms-groups" id={`${id}-groups`} role="menu" aria-label={t("menu.aria")}>
 						{hits !== null
-							? hits.items.length === 0
-								// role=status：空结果即时播报；与 role=menu 的直接子节点
-								// 内容模型（仅 menuitem/group）冲突最小——live region 会被
-								// 菜单导航跳过，不作为可选行参与键盘焦点。
-								? <div className="dms-empty" role="status">{t('search.noMatch', { query: query.trim() })}</div>
-								: <>
-										{/* items 已在 memo 内截断到 MAX_VISIBLE_HITS，map 直渲无需下标守卫 */}
-										{hits.items.map((hit) => (
-											<ModelOption
-												key={`${hit.group.id}\u0000${hit.model.id}`}
-												group={hit.group}
-												model={hit.model}
-												showProvider
-												selected={state.current?.provider === hit.group.id && state.current.model === hit.model.id}
-												busy={busy}
-												rowKey={`${hit.group.id}\u0000${hit.model.id}`}
-												nameHit={hit.nameHit}
-												t={t}
-												onChoose={choose}
-											/>
-										))}
-									{hits.total > MAX_VISIBLE_HITS && (
-										// role=note：静态辅助说明，从菜单项语义里退出来。
-										<div className="dms-more" role="note">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.total) })}</div>
-									)}
-								</>
+							? hits.items.map((hit) => {
+								const rowKey = `${hit.group.id}\u0000${hit.model.id}`;
+								return (
+									<ModelOption
+										key={rowKey}
+										group={hit.group}
+										model={hit.model}
+										showProvider
+										selected={state.current?.provider === hit.group.id && state.current.model === hit.model.id}
+										busy={busy}
+										rowKey={rowKey}
+										active={rowKey === activeRowKey}
+										onRowFocus={onRowFocus}
+										nameHit={hit.nameHit}
+										t={t}
+										onChoose={choose}
+									/>
+								);
+							})
 							: state.groups.map((group) => {
 								const headingId = `${id}-${group.id}`;
 								const isCollapsed = collapsed.has(group.id);
 								return (
 									<section key={group.id} data-group-id={group.id} role="group" aria-labelledby={headingId} className="dms-group">
+										{/* 组头参与 roving 方向键导航（data-row-key）但不进 Tab 序
+										    （tabIndex=-1）：折叠/展开对键盘可达，数百行却不会
+										    撑爆 Tab 停靠点。role=menuitem + aria-expanded 是
+										    ARIA menu 模式里「可展开菜单项」的规范语义。 */}
 <button
-												type="button"
-												role="menuitem"
-												className="dms-groupHeader"
-												aria-expanded={!isCollapsed}
+											type="button"
+											role="menuitem"
+											data-row-key={`header:${group.id}`}
+											tabIndex={-1}
+											className="dms-groupHeader"
+											aria-expanded={!isCollapsed}
 											aria-label={t('group.toggleAria', { name: group.name, count: String(group.models.length) })}
 											onClick={() => toggleCollapse(group.id)}
 										>
@@ -960,26 +1022,33 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 											<span id={headingId} className="dms-groupName">{group.name}</span>
 											<span className="dms-groupCount">{group.models.length}</span>
 										</button>
-										{!isCollapsed && group.models.map((model) => (
-											<ModelOption
-												key={`${group.id}\u0000${model.id}`}
-												group={group}
-												model={model}
-												showProvider={false}
-												selected={state.current?.provider === group.id && state.current.model === model.id}
-												busy={busy}
-												rowKey={`${group.id}\u0000${model.id}`}
-												t={t}
-												onChoose={choose}
-											/>
-										))}
+										{!isCollapsed && group.models.map((model) => {
+											const rowKey = `${group.id}\u0000${model.id}`;
+											return (
+												<ModelOption
+													key={rowKey}
+													group={group}
+													model={model}
+													showProvider={false}
+													selected={state.current?.provider === group.id && state.current.model === model.id}
+													busy={busy}
+													rowKey={rowKey}
+													active={rowKey === activeRowKey}
+													onRowFocus={onRowFocus}
+													t={t}
+													onChoose={choose}
+												/>
+											);
+										})}
 									</section>
 								);
 							})}
-						{hits === null && state.status === 'ready' && choices.length === 0 && (
-							<div className="dms-empty" role="status">{t('empty.models')}</div>
-						)}
 					</div>
+					)}
+					{hits !== null && hits.total > MAX_VISIBLE_HITS && (
+						// role=note：静态辅助说明，从菜单项语义里退出来。
+						<div className="dms-more" role="note">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.total) })}</div>
+					)}
 					{state.current !== null && dmsSliderLevels(state).length >= 2 && (
 						<div className="dms-effortFooter">
 							<span className="dms-effortFooterLabel">{t('menu.effort')}</span>
