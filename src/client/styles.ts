@@ -563,6 +563,8 @@ body:not([data-ds-dark-theme]) .dms-effort.is-dragging .dms-effort-knob {
     0 3px 8px rgba(39,77,119,.18);
 }
 @media (prefers-reduced-motion: reduce) {
+  .dms-chevron,
+  .dms-groupChevron,
   .dms-effort-knob,
   .dms-effort-flare,
   body:not([data-ds-dark-theme]) .dms-effort-track::before { transition: none; }

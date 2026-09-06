@@ -28,6 +28,11 @@ export declare function maxEffortOf(reasoning: ModelReasoning): string | undefin
 export declare function dmsEffortIndex(levels: readonly EffortLevel[], id: string | undefined): number;
 /** 索引钳位：档位数为 0 时返回 0，四舍五入后落在 [0, count-1]。 */
 export declare function dmsClampIndex(value: number, count: number): number;
+/**
+ * 指针水平位置 → 档位原始值（未四舍五入，拖动中途可落在两档之间；落点由
+ * 提交方 clamp）。输入条退化（宽度 ≤ 0 或档位数 < 2）时保持当前值不动。
+ */
+export declare function dmsPointerRaw(clientX: number, left: number, width: number, levelCount: number, current: number): number;
 export declare function dmsCurrentModel(state: DirectoryState): ModelEntry | undefined;
 /** 当前生效档位：用户已选优先，其次模型默认，最后取中间档。 */
 export declare function dmsEffectiveEffortIndex(levels: readonly EffortLevel[], state: DirectoryState): number;
@@ -40,4 +45,11 @@ export declare function dmsSliderLevels(state: DirectoryState): readonly EffortL
  * 拒绝了模型点击，滑杆必须同规则拒绝交互）。
  */
 export declare function dmsEffortBusy(committing: boolean, status: DirectoryState['status']): boolean;
+/**
+ * 超时回滚后 select 迟到成功是否应采纳并同步 UI：
+ * 只有当自回滚以来没有任何新的提交改写 committedRef（仍等于回滚前的档位）、
+ * 且当前无拖动/提交在途时，迟到结果才仍对应当前唯一的意图链——此时 UI 处于
+ * 「回滚但后端已生效」的错位态，应补一次同步而不是保持回滚。否则以新操作链为准。
+ */
+export declare function dmsShouldAdoptLateSuccess(committed: string, previous: string, dragging: boolean, committing: boolean): boolean;
 //# sourceMappingURL=effort.d.ts.map

@@ -6,7 +6,9 @@ import {
   dmsEffortIndex,
   dmsEffectiveEffortIndex,
   dmsEffortBusy,
+  dmsShouldAdoptLateSuccess,
   dmsSliderLevels,
+  dmsPointerRaw,
   maxEffortOf,
   EFFORT_RANK,
 } from '../src/client/effort.ts'
@@ -112,4 +114,36 @@ test('dmsEffortBusy：自身提交中或目录上有 select 在途都算忙（�
   assert.equal(dmsEffortBusy(false, 'selecting'), true, '模型切换在途 → 忙')
   assert.equal(dmsEffortBusy(true, 'ready'), true, '自身提交中 → 忙')
   assert.equal(dmsEffortBusy(true, 'selecting'), true, '两者叠加 → 忙')
+})
+
+test('dmsShouldAdoptLateSuccess：回滚后无新提交/无拖动时采纳迟到成功', () => {
+  // committedRef 仍等于回滚前的 previous、无拖动、无提交在途 → 迟到成功仍对应当前链
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, false), true)
+})
+
+test('dmsShouldAdoptLateSuccess：新提交已改写 committedRef 时不采纳', () => {
+  // 用户超时后又提交成功到别的档（committedRef 已变成 'high'）→ 迟到结果作废
+  assert.equal(dmsShouldAdoptLateSuccess('high', 'low', false, false), false)
+})
+
+test('dmsShouldAdoptLateSuccess：拖动中或提交在途时不采纳（防止覆盖活动操作）', () => {
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', true, false), false, '拖动中')
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, true), false, '提交在途')
+})
+
+test('dmsPointerRaw：指针水平位置线性映射到档位区间（未取整，拖动中途落两档之间）', () => {
+  // 4 档（0..3）：宽 300，起点 100 → 指针在左缘=0、中点=1.5、右缘=3
+  assert.equal(dmsPointerRaw(100, 100, 300, 4, 0), 0)
+  assert.equal(dmsPointerRaw(250, 100, 300, 4, 0), 1.5)
+  assert.equal(dmsPointerRaw(400, 100, 300, 4, 0), 3)
+  // 越界双向夹在 [0, count-1]
+  assert.equal(dmsPointerRaw(50, 100, 300, 4, 0), 0)
+  assert.equal(dmsPointerRaw(999, 100, 300, 4, 0), 3)
+})
+
+test('dmsPointerRaw：输入条退化时保持当前值（宽度 ≤ 0 或档位数 < 2）', () => {
+  assert.equal(dmsPointerRaw(250, 100, 0, 4, 2), 2)
+  assert.equal(dmsPointerRaw(250, 100, -5, 4, 2), 2)
+  assert.equal(dmsPointerRaw(250, 100, 300, 1, 1), 1)
+  assert.equal(dmsPointerRaw(250, 100, 300, 0, 0), 0)
 })

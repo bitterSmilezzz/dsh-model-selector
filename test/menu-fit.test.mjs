@@ -76,3 +76,19 @@ test('dmsMenuLeft：seat 右缘本身越出视口右缘时也改 left 锚定（�
   // 贴着右缘边距（== 上限）仍属放得下，保持右锚定不误伤
   assert.equal(dmsMenuLeft(588, 280, 600, MENU_VIEWPORT_MARGIN), undefined)
 })
+
+test('dmsMenuLeft：右缘越过边距 1px 即翻转 left 锚定，右缘恰好与视口留边对齐', () => {
+  // 边界精扫：vw-margin 处仍右锚定（588），+1px（589）立刻翻转——翻转后
+  // left 使菜单右缘 = left + width = vw - margin，不多不少。
+  assert.equal(dmsMenuLeft(589, 280, 600, MENU_VIEWPORT_MARGIN), 600 - MENU_VIEWPORT_MARGIN - 280)
+  // 翻转后右缘恰好对齐视口留边
+  const clamped = dmsMenuLeft(589, 280, 600, MENU_VIEWPORT_MARGIN)
+  assert.equal(clamped + 280, 600 - MENU_VIEWPORT_MARGIN)
+})
+
+test('dmsMenuLeft：菜单比视口还宽时钳形不回负且取左缘边距（CSS 宽度另有上限兜底）', () => {
+  // 极端退化入参：菜单宽 700 > 视口 500，任何锚定都会双侧溢出——函数必须
+  // 给出合法非负 left（≥ margin），把「保左缘」作为最终立场，不产生负定位。
+  assert.equal(dmsMenuLeft(400, 700, 500, MENU_VIEWPORT_MARGIN), MENU_VIEWPORT_MARGIN)
+  assert.equal(dmsMenuLeft(0, 700, 500, MENU_VIEWPORT_MARGIN), MENU_VIEWPORT_MARGIN)
+})

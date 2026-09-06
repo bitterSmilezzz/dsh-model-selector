@@ -49,6 +49,15 @@ export function dmsClampIndex(value: number, count: number): number {
   return Math.max(0, Math.min(count - 1, Math.round(value)))
 }
 
+/**
+ * 指针水平位置 → 档位原始值（未四舍五入，拖动中途可落在两档之间；落点由
+ * 提交方 clamp）。输入条退化（宽度 ≤ 0 或档位数 < 2）时保持当前值不动。
+ */
+export function dmsPointerRaw(clientX: number, left: number, width: number, levelCount: number, current: number): number {
+  if (width <= 0 || levelCount < 2) return current
+  return Math.max(0, Math.min(levelCount - 1, (clientX - left) / width * (levelCount - 1)))
+}
+
 export function dmsCurrentModel(state: DirectoryState): ModelEntry | undefined {
   if (state.current === null) return void 0
   const current = state.current
@@ -81,4 +90,14 @@ export function dmsSliderLevels(state: DirectoryState): readonly EffortLevel[] {
  */
 export function dmsEffortBusy(committing: boolean, status: DirectoryState['status']): boolean {
   return committing || status === 'selecting'
+}
+
+/**
+ * 超时回滚后 select 迟到成功是否应采纳并同步 UI：
+ * 只有当自回滚以来没有任何新的提交改写 committedRef（仍等于回滚前的档位）、
+ * 且当前无拖动/提交在途时，迟到结果才仍对应当前唯一的意图链——此时 UI 处于
+ * 「回滚但后端已生效」的错位态，应补一次同步而不是保持回滚。否则以新操作链为准。
+ */
+export function dmsShouldAdoptLateSuccess(committed: string, previous: string, dragging: boolean, committing: boolean): boolean {
+  return committed === previous && !dragging && !committing
 }

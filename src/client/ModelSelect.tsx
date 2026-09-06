@@ -30,7 +30,11 @@ import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selec
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
-import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsSliderLevels, maxEffortOf } from './effort.ts'
+import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsShouldAdoptLateSuccess, dmsSliderLevels, maxEffortOf } from './effort.ts'
+// 辐射画布（绘制纯函数 + 动画循环 hook）与指针拖动状态机：从 EffortSlider
+// 组件内拆分独立成模块，组件本体只保留档位/提交/渲染三件事。
+import { useEffortCanvas } from './effortCanvas.ts'
+import { useEffortDrag } from './effortDrag.ts'
 // Menu direction/clamp helpers likewise (pure — the direction flip and the
 // below-clamp are user-visible and were previously only browser-testable).
 import { MENU_MAX_HEIGHT, MENU_VIEWPORT_MARGIN, dmsMenuAbove, dmsBelowMaxHeight, dmsMenuLeft } from './menuFit.ts'
@@ -47,6 +51,16 @@ type ModelChoice = {
 	haystack: string
 	selection: ModelSelection
 }
+
+/** 搜索命中的渲染条目：只装渲染窗口内的命中（窗口外只计数，见 hits memo）。 */
+type SearchHit = {
+	group: ModelProviderGroup
+	model: ModelProviderGroup["models"][number]
+	nameHit: { start: number; end: number } | null
+}
+
+/** 搜索命中结果：items 为窗口内条目（渲染用），total 为命中总数（播报/截断提示用）。 */
+type SearchResult = { items: SearchHit[]; total: number }
 
 interface EffortSliderProps {
   state: DirectoryState
@@ -68,83 +82,13 @@ const IconClear = <IconCloseFill14 />;
 const DIRECTORY_STALE_MS = 3e4;
 /** 搜索命中渲染上限：宽泛关键词（如单字母）命中数百条时避免 DOM 爆炸。 */
 const MAX_VISIBLE_HITS = 100;
+/** effort select RPC 的超时护栏：官方 select 无超时契约，RPC 永久挂起时
+ * 必须释放滑杆的 committing 锁并回滚，否则滑杆被锁死到菜单关闭。 */
+const EFFORT_COMMIT_TIMEOUT_MS = 12e3;
 // ── 推理强度滑块（移植自 dsh-reasoning-effort：辐射特效 + 档位随模型自动适配）──
-function dmsDrawRadiation(context: CanvasRenderingContext2D, width: number, height: number, time: number, state: { progress: number; dragging: boolean }): void {
-  const origin = state.progress * width;
-  const isDark = document.body.hasAttribute("data-ds-dark-theme");
-  const cell = 4;
-  const speed = state.dragging ? 2.8 : 1;
-  context.clearRect(0, 0, width, height);
-  if (origin <= 0) return;
-  context.save();
-  context.beginPath();
-  context.rect(0, 0, origin, height);
-  context.clip();
-  for (let x = 0; x < origin; x += cell) {
-    const delta = x + cell * 0.5 - origin;
-    const distance = Math.abs(delta);
-    const phaseA = distance / 10 - time * 74e-4 * speed;
-    const phaseB = distance / 23 - time * 41e-4 * speed + 1.7;
-    const phaseC = distance / 40 - time * 22e-4 * speed + 3.4;
-    const sinA = Math.max(0, Math.sin(phaseA));
-    const sinB = Math.max(0, Math.sin(phaseB));
-    const sinC = Math.max(0, Math.sin(phaseC));
-    const waveA = Math.pow(sinA, 2.6);
-    const waveB = Math.pow(sinB, 3.2);
-    const waveC = Math.pow(sinC, 4);
-    const crest = Math.pow(sinA, 15) + Math.pow(sinB, 18) * 0.78;
-    const wave = Math.min(1, waveA * 0.76 + waveB * 0.58 + waveC * 0.32);
-    const trail = 0.38 + 0.62 * Math.exp(-distance / 90);
-    const pillar = Math.pow(Math.max(0, Math.sin(x / 20 + time * 16e-4)), 3) * 0.27;
-    const columnEnergy = trail * (wave * 1.04 + pillar + crest * 0.32);
-    if (columnEnergy > 0.012) {
-      const nearness = Math.max(0, 1 - distance / 140);
-      const red = isDark ? Math.round(42 + 124 * nearness + 75 * wave) : Math.round(28 + 58 * nearness + 15 * wave);
-      const green = isDark ? Math.round(56 + 58 * nearness + 44 * crest) : Math.round(88 + 72 * nearness + 30 * crest);
-      const blue = isDark ? Math.round(175 + 72 * nearness + 8 * wave) : Math.round(182 + 62 * nearness);
-      const alpha = isDark ? Math.min(0.88, columnEnergy * 0.72) : Math.min(0.62, columnEnergy * 0.54);
-      context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-      context.fillRect(x, 0, cell - 1, height);
-    }
-    for (let y = 0; y < height; y += cell) {
-      const deltaY = y + cell * 0.5 - height * 0.5;
-      const radial = Math.hypot(delta / 38, deltaY / 11);
-      const halo = Math.exp(-radial * 0.96) * 1.08;
-      const verticalShape = 0.58 + 0.42 * Math.cos(deltaY / height * Math.PI);
-      const grain = 0.72 + 0.28 * Math.sin(x * 0.73 + y * 1.31 + time * 6e-3);
-      const alpha = Math.min(0.96, (columnEnergy * 0.88 + halo + crest * 0.19) * verticalShape * grain);
-      if (alpha < 0.035) continue;
-      const hot = Math.max(0, 1 - radial / 2.4);
-      const red = isDark ? Math.round(54 + 148 * hot + 42 * wave + 35 * crest) : Math.round(25 + 72 * hot + 12 * wave);
-      const green = isDark ? Math.round(68 + 78 * hot + 46 * crest) : Math.round(98 + 72 * hot + 24 * crest);
-      const blue = isDark ? Math.round(186 + 64 * hot) : Math.round(194 + 56 * hot);
-      context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${isDark ? alpha : alpha * 0.72})`;
-      context.fillRect(x, y, cell - 1, cell - 1);
-    }
-  }
-  for (let i = 0; i < 14; i += 1) {
-    const travel = (time * (state.dragging ? 0.16 : 0.065) * (0.78 + i % 5 * 0.09) + i * 23) % Math.max(30, origin + 64);
-    const particleX = origin - travel;
-    if (particleX < -24 || particleX > width + 16) continue;
-    const particleY = 3 + (i * 13 + Math.sin(time * 3e-3 + i) * 5) % Math.max(7, height - 6);
-    const length = 4 + i % 4 * 4 + (state.dragging ? 6 : 0);
-    const alpha = 0.28 + i % 5 * 0.1;
-    const streak = context.createLinearGradient(particleX, 0, particleX + length, 0);
-    streak.addColorStop(0, isDark ? "rgba(72,118,255,0)" : "rgba(24,94,184,0)");
-    streak.addColorStop(0.68, isDark ? `rgba(112,135,255,${alpha})` : `rgba(36,108,202,${alpha * 0.72})`);
-    streak.addColorStop(1, isDark ? `rgba(236,222,255,${Math.min(1, alpha + 0.26)})` : `rgba(103,175,248,${Math.min(0.82, alpha + 0.18)})`);
-    context.fillStyle = streak;
-    context.fillRect(particleX, particleY, length, i % 3 === 0 ? 2 : 1);
-  }
-  const glow = context.createRadialGradient(origin, height / 2, 0, origin, height / 2, 24);
-  glow.addColorStop(0, isDark ? "rgba(255,255,255,.82)" : "rgba(255,255,255,.86)");
-  glow.addColorStop(0.14, isDark ? "rgba(183,190,255,.54)" : "rgba(162,210,255,.48)");
-  glow.addColorStop(0.44, isDark ? "rgba(103,74,255,.28)" : "rgba(37,112,207,.22)");
-  glow.addColorStop(1, isDark ? "rgba(86,31,210,0)" : "rgba(25,91,181,0)");
-  context.fillStyle = glow;
-  context.fillRect(origin - 26, 0, 52, height);
-  context.restore();
-}
+// 绘制与动画循环见 ./effortCanvas.ts（dmsDrawRadiation / useEffortCanvas），
+// 指针拖动状态机见 ./effortDrag.ts（useEffortDrag）；本组件只做档位状态、
+// 提交/回滚与渲染。
 export const EffortSlider = react.memo(function EffortSlider({ state, select, t }: EffortSliderProps) {
 	const levels = dmsSliderLevels(state);
 	// 惰性初始化到当前生效档：useState("")/0 会让菜单打开的第一帧档位名为空、
@@ -152,26 +96,23 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 	const [effort, setEffort] = react.useState(() => levels[dmsEffectiveEffortIndex(levels, state)]?.id ?? "");
 	const [preview, setPreview] = react.useState(() => dmsEffectiveEffortIndex(levels, state));
 	const [committing, setCommitting] = react.useState(false);
-	const [dragging, setDragging] = react.useState(false);
 	const [localError, setLocalError] = react.useState<string | null>(null);
 	const canvasRef = react.useRef<HTMLCanvasElement | null>(null);
-	const inputRef = react.useRef(null);
+	const inputRef = react.useRef<HTMLInputElement | null>(null);
 	const committedRef = react.useRef("");
 	const committingRef = react.useRef(false);
 	const previewRef = react.useRef(0);
 	const draggingRef = react.useRef(false);
-	const pointerActiveRef = react.useRef(false);
-	const activePointerIdRef = react.useRef<number | null>(null);
-	const globalPointerMoveRef = react.useRef<((event: PointerEvent) => void) | null>(null);
-	const globalPointerEndRef = react.useRef<((event: PointerEvent) => void) | null>(null);
-	const globalPointerCancelRef = react.useRef<((event: PointerEvent) => void) | null>(null);
-	const radiationRef = react.useRef<{ progress: number; dragging: boolean; target?: number }>({ progress: 0.5, dragging: false });
+	// 辐射状态由组件持有：preview 变化/拖动时更新 target/dragging 驱动重绘；
+	// progress 惰性对齐当前档位（打开菜单首帧即正确，无中间态缓动）。useRef
+	// 初始化表达式每次渲染都会求值但仅首帧生效，这里取首次渲染的档位作起点。
+	const radiationRef = react.useRef<{ progress: number; dragging: boolean; target?: number }>({
+		progress: levels.length >= 2 ? dmsEffectiveEffortIndex(levels, state) / (levels.length - 1) : 0.5,
+		dragging: false,
+	});
 	const redrawRef = react.useRef<(() => void) | null>(null);
 	const available = state.current !== null && levels.length >= 2;
 	const busy = dmsEffortBusy(committing, state.status);
-	// 只显示滑杆自身的失败（本地化文案）；state.error 是共享目录级错误（load/
-	// 模型切换失败都写它，且是原始 `code: message`）——前者由菜单顶部错误条、
-	// 后者由 Toast 负责，兜底到这里会双重播报并把未翻译文本漏进档位区。
 	const error = localError;
 	react.useEffect(() => {
 		if (!available || committingRef.current || draggingRef.current) return;
@@ -188,132 +129,85 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 		radiationRef.current.target = levels.length >= 2 ? preview / (levels.length - 1) : 0.5;
 		redrawRef.current?.();
 	}, [preview, levels.length]);
+	const redraw = useEffortCanvas(canvasRef, radiationRef);
 	react.useEffect(() => {
-		radiationRef.current.dragging = dragging;
-		redrawRef.current?.();
-	}, [dragging]);
-	react.useEffect(() => {
-		const canvas = canvasRef.current;
-		if (canvas === null) return;
-		const context = canvas.getContext("2d");
-		if (context === null) return;
-		const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-		let width = 1;
-		let height = 1;
-		let frame = 0;
-		// Phase clock advances only while the loop runs, so a frozen (idle)
-		// effect resumes at the exact wave phase it paused at — no jump.
-		let phase = 0;
-		let lastFrameAt = 0;
-		const resize = () => {
-			const bounds = canvas.getBoundingClientRect();
-			const ratio = Math.min(window.devicePixelRatio || 1, 2);
-			width = Math.max(1, bounds.width);
-			height = Math.max(1, bounds.height);
-			canvas.width = Math.max(1, Math.round(width * ratio));
-			canvas.height = Math.max(1, Math.round(height * ratio));
-			context.setTransform(ratio, 0, 0, ratio, 0, 0);
-		};
-		// Draw one frame at the current phase; returns true while the effect
-		// should keep animating (still easing toward its target).
-		// Idle = one static frame, zero further CPU — the loop only runs while
-		// the glow is settling, instead of forever.
-		// While dragging, stop after a single frame: every pointer move bumps
-		// `preview` and redraw() draws one event-driven frame, so the glow
-		// follows the knob without a back-to-back repaint stream. Continuously
-		// repainting this mix-blend canvas is what flickered the whole menu.
-		const draw = (): boolean => {
-			const r = radiationRef.current;
-			if (r.target !== void 0) {
-				const k = r.dragging ? 0.55 : 0.12;
-				r.progress += (r.target - r.progress) * k;
-				if (Math.abs(r.target - r.progress) < 0.002) r.progress = r.target;
-			}
-			dmsDrawRadiation(context, width, height, phase, r);
-			if (r.dragging) return false;
-			return r.target !== void 0 && Math.abs(r.target - r.progress) > 0.002;
-		};
-		const loop = (time: number): void => {
-			if (lastFrameAt !== 0) phase += time - lastFrameAt;
-			lastFrameAt = time;
-			if (draw() && !document.hidden) {
-				frame = window.requestAnimationFrame(loop);
-			} else {
-				frame = 0;
-				lastFrameAt = 0;
-			}
-		};
-		const redraw = () => {
-			if (reducedMotion.matches) {
-				draw();
-				return;
-			}
-			// Restart the loop on demand (pointer/theme/preview changes);
-			// a running loop already draws every frame, so no extra draw here.
-			if (frame === 0 && !document.hidden) {
-				lastFrameAt = 0;
-				frame = window.requestAnimationFrame(loop);
-			}
-		};
-		const resizeObserver = new ResizeObserver(() => {
-			resize();
-			draw();
-		});
-		const themeObserver = new MutationObserver(() => draw());
-		const onVisibility = () => {
-			if (!document.hidden) redraw();
-		};
-		resizeObserver.observe(canvas);
-		themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
-		document.addEventListener("visibilitychange", onVisibility);
 		redrawRef.current = redraw;
-		resize();
-		draw();
-		if (!reducedMotion.matches && !document.hidden) frame = window.requestAnimationFrame(loop);
-		return () => {
-			window.cancelAnimationFrame(frame);
-			resizeObserver.disconnect();
-			themeObserver.disconnect();
-			document.removeEventListener("visibilitychange", onVisibility);
-			redrawRef.current = null;
-		};
-	}, []);
+		return () => { redrawRef.current = null; };
+	}, [redraw]);
+	const showPointerPreview = react.useCallback((raw: number): void => {
+		previewRef.current = raw;
+		setPreview(raw);
+		setEffort(levels[dmsClampIndex(raw, levels.length)]?.id ?? "");
+	}, [levels]);
 	const rollback = react.useCallback(() => {
 		const previous = committedRef.current;
 		previewRef.current = Math.max(0, dmsEffortIndex(levels, previous));
-		pointerActiveRef.current = false;
-		activePointerIdRef.current = null;
-		draggingRef.current = false;
 		setEffort(previous);
 		setPreview(Math.max(0, dmsEffortIndex(levels, previous)));
-		setDragging(false);
 	}, [levels]);
 	const commit = react.useCallback(async (raw: number): Promise<void> => {
 		if (dmsEffortBusy(committingRef.current, state.status)) return;
+		// 先按钳位后的档位判断是否无操作：落回已提交的同一档（含拖动归位、键盘
+		// 重复按当前档）时，不发多余 RPC，也不闪本地 busy 灰——原实现把这次早退
+		// 放在 setCommitting(true)/乐观 setState 之后，同一档提交仍会闪一次。
+		// levels 非空时 clamp 保证 index ∈ [0, count-1]，next 不可能为 undefined。
+		const index = dmsClampIndex(raw, levels.length);
+		const next = levels[index]?.id;
+		if (next === void 0 || next === committedRef.current) return;
 		committingRef.current = true;
 		const previous = committedRef.current;
-		setDragging(false);
+		// 注意：这里不重置 dragging——commit 的唯二入口是拖动结束（stopDragging
+		// 已先 setDragging(false)）与键盘（本就非拖拽），无需防御性复位。
 		setCommitting(true);
 		setLocalError(null);
-		const optimisticIndex = dmsClampIndex(raw, levels.length);
-		const optimistic = levels[optimisticIndex]?.id;
-		if (optimistic !== void 0) {
-			previewRef.current = optimisticIndex;
-			setPreview(optimisticIndex);
-			setEffort(optimistic);
-		}
+		previewRef.current = index;
+		setPreview(index);
+		setEffort(next);
 		try {
 			const current = state.current;
 			if (current === null) throw new Error(t("empty.efforts"));
-			const index = dmsClampIndex(raw, levels.length);
-			const next = levels[index]?.id;
-			if (next === void 0) throw new Error(t("empty.efforts"));
-			// 落回已提交的同一档：不发多余 RPC，否则菜单会被 selecting 状态闪一次灰。
-			if (next === committedRef.current) return;
-			previewRef.current = index;
-			setPreview(index);
-			setEffort(next);
-			const ok = await select({ provider: current.provider, model: current.model, reasoningEffort: next });
+			// 超时护栏：官方 select 无超时契约，把它包进带 12s 定时的 Promise——
+			// 超时即视为失败（回滚 + 播报），并释放 committing 锁。select 迟到的
+			// resolve 不直接丢弃：若它确认了新档位且自回滚以来没有新提交改写
+			// committedRef（回滚态仍对应本次提交链），把 UI/committedRef 同步回
+			// 实际已生效的档位；迟到的 reject 保持回滚态。timer 在 select 先完成
+			// 时清除，不泄漏空转定时器。
+			const ok = await new Promise<boolean>((resolve, reject) => {
+				let settled = false;
+				const timer = window.setTimeout(() => {
+					if (settled) return;
+					settled = true;
+					reject(new Error(t("effort.timeout")));
+				}, EFFORT_COMMIT_TIMEOUT_MS);
+				select({ provider: current.provider, model: current.model, reasoningEffort: next }).then(
+					(accepted) => {
+						if (settled) {
+							// 迟到成功且实际生效：committedRef 还是回滚前的 previous
+							// （期间没有新的提交/拖动改写它），说明回滚态对应用户当前
+							// 唯一意图链，后端已确认新档位——补一次 UI 同步，消除
+							// 「UI 回滚、后端已改档」的错位；否则以新操作链为准不覆盖。
+							// 判定收敛到 dmsShouldAdoptLateSuccess（effort.ts，node 可测）。
+							if (accepted && dmsShouldAdoptLateSuccess(committedRef.current, previous, draggingRef.current, committingRef.current)) {
+								committedRef.current = next;
+								previewRef.current = index;
+								setEffort(next);
+								setPreview(index);
+								setLocalError(null);
+							}
+							return;
+						}
+						settled = true;
+						window.clearTimeout(timer);
+						resolve(accepted);
+					},
+					(cause: unknown) => {
+						if (settled) return;
+						settled = true;
+						window.clearTimeout(timer);
+						reject(cause);
+					},
+				);
+			});
 			if (!ok) throw new Error(t("effort.failed"));
 			committedRef.current = next;
 			previewRef.current = index;
@@ -331,69 +225,24 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 			setCommitting(false);
 		}
 	}, [levels, select, state, t]);
-	const rawFromPointer = (input: HTMLInputElement, clientX: number): number => {
-		const bounds = input.getBoundingClientRect();
-		if (bounds.width <= 0 || levels.length < 2) return previewRef.current;
-		return Math.max(0, Math.min(levels.length - 1, (clientX - bounds.left) / bounds.width * (levels.length - 1)));
-	};
-	const showPointerPreview = (raw: number): void => {
-		previewRef.current = raw;
-		setPreview(raw);
-		setEffort(levels[dmsClampIndex(raw, levels.length)]?.id ?? "");
-	};
-	const beginDragging = (input: HTMLInputElement, pointerId: number, clientX: number): void => {
-		pointerActiveRef.current = true;
-		activePointerIdRef.current = pointerId;
-		draggingRef.current = true;
-		setDragging(true);
-		showPointerPreview(rawFromPointer(input, clientX));
-		try {
-			if (!input.hasPointerCapture(pointerId)) input.setPointerCapture(pointerId);
-		} catch {
-		}
-	};
-	const moveDragging = (input: HTMLInputElement, pointerId: number, clientX: number): void => {
-		if (!pointerActiveRef.current || activePointerIdRef.current !== pointerId) return;
-		showPointerPreview(rawFromPointer(input, clientX));
-	};
-	const stopDragging = (input: HTMLInputElement, pointerId?: number, clientX?: number): void => {
-		if (!pointerActiveRef.current) return;
-		if (pointerId !== void 0 && activePointerIdRef.current !== pointerId) return;
-		const raw = clientX === void 0 ? previewRef.current : rawFromPointer(input, clientX);
-		pointerActiveRef.current = false;
-		activePointerIdRef.current = null;
-		draggingRef.current = false;
-		if (pointerId !== void 0 && input.hasPointerCapture(pointerId)) {
-			input.releasePointerCapture(pointerId);
-		}
-		showPointerPreview(raw);
-		void commit(raw);
-	};
-	globalPointerMoveRef.current = (event) => {
-		const input = inputRef.current;
-		if (input !== null) moveDragging(input, event.pointerId, event.clientX);
-	};
-	globalPointerEndRef.current = (event) => {
-		const input = inputRef.current;
-		if (input !== null) stopDragging(input, event.pointerId, event.clientX);
-	};
-	globalPointerCancelRef.current = (event: PointerEvent): void => {
-		if (activePointerIdRef.current !== event.pointerId) return;
-		rollback();
-	};
+	// 指针拖动状态机（pointer 生命周期 + window 兜底监听）在 effortDrag.ts；
+	// commit/rollback/showPointerPreview 作回调外接——hook 经 callbacksRef 持有
+	// 最新闭包，事件触发时取到当前渲染的函数。
+	const drag = useEffortDrag({
+		levelCount: () => levels.length,
+		canStart: () => !busy,
+		onPreview: showPointerPreview,
+		onCommit: (raw) => void commit(raw),
+		onRollback: rollback,
+		inputRef,
+		draggingRef,
+	});
+	const { dragging } = drag;
+	// 拖动态同步到辐射状态与画布（preview effect 已处理 target，这里只切 dragging 速度）。
 	react.useEffect(() => {
-		const move = (event: PointerEvent) => globalPointerMoveRef.current?.(event);
-		const end = (event: PointerEvent) => globalPointerEndRef.current?.(event);
-		const cancel = (event: PointerEvent) => globalPointerCancelRef.current?.(event);
-		window.addEventListener("pointermove", move, true);
-		window.addEventListener("pointerup", end, true);
-		window.addEventListener("pointercancel", cancel, true);
-		return () => {
-			window.removeEventListener("pointermove", move, true);
-			window.removeEventListener("pointerup", end, true);
-			window.removeEventListener("pointercancel", cancel, true);
-		};
-	}, []);
+		radiationRef.current.dragging = dragging;
+		redrawRef.current?.();
+	}, [dragging]);
 	const onKeyDown = (event: react.KeyboardEvent<HTMLInputElement>): void => {
 		const current = dmsClampIndex(Number(event.currentTarget.value), levels.length);
 		let target;
@@ -447,25 +296,11 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 						const raw = Number(event.currentTarget.value);
 						showPointerPreview(raw);
 					}}
-					onPointerDown={(event: react.PointerEvent<HTMLInputElement>) => {
-						// 忙态（模型切换/提交在途）不开新拖拽：目录 select 是
-						// last-writer-wins，交错的 effort RPC 会打到旧模型上。
-						if (busy) return;
-						event.preventDefault();
-						event.currentTarget.focus();
-						beginDragging(event.currentTarget, event.pointerId, event.clientX);
-					}}
-					onPointerMove={(event: react.PointerEvent<HTMLInputElement>) => moveDragging(event.currentTarget, event.pointerId, event.clientX)}
-					onPointerUp={(event: react.PointerEvent<HTMLInputElement>) => stopDragging(event.currentTarget, event.pointerId, event.clientX)}
-					onPointerCancel={(event: react.PointerEvent<HTMLInputElement>) => {
-						if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-							event.currentTarget.releasePointerCapture(event.pointerId);
-						}
-						rollback();
-					}}
-					onBlur={(event: react.FocusEvent<HTMLInputElement>) => {
-						stopDragging(event.currentTarget);
-					}}
+					onPointerDown={drag.handlers.onPointerDown}
+					onPointerMove={drag.handlers.onPointerMove}
+					onPointerUp={drag.handlers.onPointerUp}
+					onPointerCancel={drag.handlers.onPointerCancel}
+					onBlur={drag.handlers.onBlur}
 					onKeyDown={onKeyDown}
 				/>
 				<span className="dms-effort-knob" aria-hidden="true" />
@@ -495,6 +330,10 @@ interface ModelOptionProps {
  * 菜单里的一行模型。独立成 memo 组件：目录可能数百行，搜索输入每击键都会
  * 重建菜单内容，行 props（group/model 引用、selected/busy/rowKey、稳定的
  * onChoose）稳定时 React 直接跳过 reconcile，只重渲染真正变化的那行。
+ *
+ * 自定义比较器（默认浅比较的补充）：nameHit 是每次击键新建的对象（引用必变），
+ * 但 100 条命中里绝大多数命中区间不变——按值比较 start/end，值相同即跳过
+ * 重渲染，搜索才不卡顿。
  */
 const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, nameHit, t, onChoose }: ModelOptionProps) {
 	const hit = nameHit === undefined || nameHit === null || nameHit.start === nameHit.end
@@ -532,6 +371,20 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 			</span>
 		</button>
 	);
+}, (prev, next) => {
+	if (prev.group !== next.group) return false;
+	if (prev.model !== next.model) return false;
+	if (prev.showProvider !== next.showProvider) return false;
+	if (prev.selected !== next.selected) return false;
+	if (prev.busy !== next.busy) return false;
+	if (prev.rowKey !== next.rowKey) return false;
+	if (prev.t !== next.t) return false;
+	if (prev.onChoose !== next.onChoose) return false;
+	// 引用相同（含都是 null/undefined）即视为未变化；否则按值比较命中区间。
+	if (prev.nameHit === next.nameHit) return true;
+	if (prev.nameHit === null || prev.nameHit === void 0) return false;
+	if (next.nameHit === null || next.nameHit === void 0) return false;
+	return prev.nameHit.start === next.nameHit.start && prev.nameHit.end === next.nameHit.end;
 });
 
 interface ModelSelectProps {
@@ -591,19 +444,24 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const effortLabel = reasoning === void 0 ? void 0 : effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
 	const busy = state.status === "selecting";
 	const normalized = query.trim().toLowerCase();
-	const hits = react.useMemo(() => {
+	const hits = react.useMemo<SearchResult | null>(() => {
 		if (normalized === "") return null;
-		const found = [];
-		for (const choice of choices) if (choice.haystack.includes(normalized)) found.push({
-			group: choice.group,
-			model: choice.model,
-			// 名称内命中片段（高亮用）；命中落在描述/供应商标/id 时为 null 不标。
-			nameHit: (() => {
-				const at = choice.model.name.toLowerCase().indexOf(normalized);
-				return at < 0 ? null : { start: at, end: at + normalized.length };
-			})(),
-		});
-		return found;
+		const items: SearchHit[] = [];
+		let total = 0;
+		for (const choice of choices) {
+			if (!choice.haystack.includes(normalized)) continue;
+			total += 1;
+			// 渲染窗口已满：只计数不构造对象——宽泛关键词（单字母）命中数百条时，
+			// 每次击键省掉数百次 `{group, model, nameHit}` 分配；nameHit 的 indexOf
+			// 也只在窗口内做（高亮只消费窗口内条目）。总数单独累计，播报与
+			// 「仅显示前 N 条」提示仍然准确。
+			if (items.length >= MAX_VISIBLE_HITS) continue;
+			let nameHit: { start: number; end: number } | null = null;
+			const at = choice.model.name.toLowerCase().indexOf(normalized);
+			if (at >= 0) nameHit = { start: at, end: at + normalized.length };
+			items.push({ group: choice.group, model: choice.model, nameHit });
+		}
+		return { items, total };
 	}, [choices, normalized]);
 	const reload = react.useCallback(() => {
 		lastActionRef.current = "load";
@@ -671,23 +529,66 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	react.useEffect(() => {
 		if (!open) return;
 		searchRef.current?.focus();
-		// 打开即把当前选中行滚进可视区：选中模型在长列表深处时不用手动翻找。
-		// 手动改 scrollTop 而不用 scrollIntoView，避免连带滚动页面/其它祖先容器。
-		// 吸顶分组头（sticky top:0）会盖住滚到容器顶缘的行：偏移量按所在组的
-		// 头部实际高度让位，否则「滚到了」却看不见。
-		queueMicrotask(() => {
-			const list = menuRef.current?.querySelector(".dms-groups");
-			if (list === null || list === void 0) return;
-			const row = list.querySelector('[role="menuitemradio"][aria-checked="true"]');
-			if (row === null) return;
-			const rowRect = row.getBoundingClientRect();
-			const listRect = list.getBoundingClientRect();
-			const header = row.closest("section")?.querySelector(".dms-groupHeader");
-			const headerHeight = header === null || header === undefined ? 0 : header.getBoundingClientRect().height;
-			if (rowRect.top < listRect.top + headerHeight) list.scrollTop += rowRect.top - (listRect.top + headerHeight);
-			else if (rowRect.bottom > listRect.bottom) list.scrollTop += rowRect.bottom - listRect.bottom;
-		});
 	}, [open]);
+	// 打开即把当前选中行滚进可视区：选中模型在长列表深处时不用手动翻找。
+	// 手动改 scrollTop 而不用 scrollIntoView，避免连带滚动页面/其它祖先容器。
+	// 吸顶分组头（sticky top:0）会盖住滚到容器顶缘的行：偏移量按所在组的
+	// 头部实际高度让位，否则「滚到了」却看不见。
+	// 依赖补全：目录异步加载完成（state.groups 引用变化）后重新定位——原实现
+	// 只依赖 [open]，加载完成晚于开合的那次渲染时选中行永远不会滚进可视区。
+	// useLayoutEffect（而非 queueMicrotask）：DOM 已在提交阶段就绪，同步滚动
+	// 不产生首帧跳动；且此时行/头部尺寸可测。
+	const scrollSelectedIntoView = (): void => {
+		const list = menuRef.current?.querySelector(".dms-groups");
+		if (list === null || list === void 0) return;
+		// 折叠/展开/目录刷新改变内容高度后，scrollTop 可能超出新的可滚上限
+		// （浏览器不自动钳回，滚动条下方露出空白），先钳回合法区间再定位。
+		const maxScroll = list.scrollHeight - list.clientHeight;
+		if (list.scrollTop > maxScroll) list.scrollTop = Math.max(0, maxScroll);
+		// 选中行不在 DOM（选中组被折叠 / 搜索把选中模型滤掉）时，退而滚动到
+		// 选中项所在分组（含折叠态，让用户看到「当前模型在那个组」）。
+		const selected = state.current;
+		const row = list.querySelector('[role="menuitemradio"][aria-checked="true"]');
+		if (row === null) {
+			if (selected === null) return;
+			const section = list.querySelector<HTMLElement>(`section[data-group-id="${globalThis.CSS.escape(selected.provider)}"]`);
+			if (section === null) return;
+			const sectionRect = section.getBoundingClientRect();
+			const listRect = list.getBoundingClientRect();
+			if (sectionRect.top < listRect.top) list.scrollTop += sectionRect.top - listRect.top;
+			else if (sectionRect.bottom > listRect.bottom) list.scrollTop += sectionRect.bottom - listRect.bottom;
+			return;
+		}
+		const rowRect = row.getBoundingClientRect();
+		const listRect = list.getBoundingClientRect();
+		const header = row.closest("section")?.querySelector(".dms-groupHeader");
+		const headerHeight = header === null || header === undefined ? 0 : header.getBoundingClientRect().height;
+		if (rowRect.top < listRect.top + headerHeight) list.scrollTop += rowRect.top - (listRect.top + headerHeight);
+		else if (rowRect.bottom > listRect.bottom) list.scrollTop += rowRect.bottom - listRect.bottom;
+	};
+	// 打开瞬间自动展开选中组（若被折叠）。用 ref 记录「本次打开周期已自动展开过
+	// 哪个 provider」：layout effect 依赖含 collapsed，若不拦截，用户手动折叠
+	// 选中组时 effect 会立刻把它重新展开——折叠功能对选中组形同失效。
+	// 只在 provider 首次解析到（含异步 load 完成后）且处于折叠态时展开一次，
+	// 之后同 provider 的手动折叠不再被抢。
+	const expandedProviderRef = react.useRef<string | null>(null);
+	react.useLayoutEffect(() => {
+		if (!open) {
+			expandedProviderRef.current = null;
+			return;
+		}
+		const provider = state.current?.provider ?? null;
+		if (provider !== null && provider !== expandedProviderRef.current && collapsed.has(provider)) {
+			expandedProviderRef.current = provider;
+			setCollapsed((prev) => {
+				if (!prev.has(provider)) return prev;
+				const next = new Set(prev);
+				next.delete(provider);
+				return next;
+			});
+		}
+		scrollSelectedIntoView();
+	}, [open, state.groups, state.current, collapsed, hits]);
 	// show/close/choose/toggleCollapse 四个 useCallback 必须全部位于下方
 	// `if (!available) return null` 早退之前：hooks 数量不得随渲染分支变化
 	// （React 会直接抛 "Rendered more hooks than during the previous render"）。
@@ -750,7 +651,10 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		const items = [...menu.querySelectorAll<HTMLButtonElement>('[data-row-key]')];
 		if (items.length === 0) return;
 		const active = items.findIndex((item) => item === document.activeElement);
-		items[((active < 0 ? offset > 0 ? -1 : 0 : active) + offset + items.length) % items.length]?.focus();
+		// 焦点不在任何行上（在搜索框等菜单内控件）时：向下从首行进、向上从末行进（环绕）；
+		// 已在某行上时按 offset 循环。
+		const start = active < 0 ? (offset > 0 ? -1 : 0) : active;
+		items[(start + offset + items.length) % items.length]?.focus();
 	};
 	// Home/End 跳首/末行（WAI-ARIA menu 标准键；搜索框内不劫持——那是移光标键）。
 	const focusEdge = (last: boolean): void => {
@@ -791,9 +695,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		// 只有搜索框内的 Enter 才选中第一个命中：焦点落在 effort 滑杆（range
 		// input）等其它控件时，Enter 不应把用户的选择抢走。
 		if (event.key === "Enter" && fromSearch) {
-			if (hits !== null && hits.length > 0) {
+			if (hits !== null && hits.items.length > 0) {
 				event.preventDefault();
-				const first = hits[0]!;
+				const first = hits.items[0]!;
 				choose({ provider: first.group.id, model: first.model.id });
 			}
 		}
@@ -912,14 +816,18 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					{/* 搜索结果的屏幕阅读器播报：命中总数变化时由 role=status 播报，
 					    视觉隐藏（.dms-sr）；放在 role=menu 容器外，不污染菜单内容模型。 */}
 					{hits !== null && (
-						<span className="dms-sr" role="status">{t('search.status', { count: String(hits.length) })}</span>
+						<span className="dms-sr" role="status">{t('search.status', { count: String(hits.total) })}</span>
 					)}
 					<div className="dms-groups" id={`${id}-groups`} role="menu" aria-label={t("menu.aria")}>
 						{hits !== null
-							? hits.length === 0
-								? <div className="dms-empty">{t('search.noMatch', { query: query.trim() })}</div>
+							? hits.items.length === 0
+								// role=status：空结果即时播报；与 role=menu 的直接子节点
+								// 内容模型（仅 menuitem/group）冲突最小——live region 会被
+								// 菜单导航跳过，不作为可选行参与键盘焦点。
+								? <div className="dms-empty" role="status">{t('search.noMatch', { query: query.trim() })}</div>
 								: <>
-										{hits.slice(0, MAX_VISIBLE_HITS).map((hit) => (
+										{/* items 已在 memo 内截断到 MAX_VISIBLE_HITS，map 直渲无需下标守卫 */}
+										{hits.items.map((hit) => (
 											<ModelOption
 												key={`${hit.group.id}\u0000${hit.model.id}`}
 												group={hit.group}
@@ -933,15 +841,16 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 												onChoose={choose}
 											/>
 										))}
-									{hits.length > MAX_VISIBLE_HITS && (
-										<div className="dms-more">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.length) })}</div>
+									{hits.total > MAX_VISIBLE_HITS && (
+										// role=note：静态辅助说明，从菜单项语义里退出来。
+										<div className="dms-more" role="note">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.total) })}</div>
 									)}
 								</>
 							: state.groups.map((group) => {
 								const headingId = `${id}-${group.id}`;
 								const isCollapsed = collapsed.has(group.id);
 								return (
-									<section key={group.id} role="group" aria-labelledby={headingId} className="dms-group">
+									<section key={group.id} data-group-id={group.id} role="group" aria-labelledby={headingId} className="dms-group">
 <button
 												type="button"
 												role="menuitem"
@@ -973,7 +882,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 								);
 							})}
 						{hits === null && state.status === 'ready' && choices.length === 0 && (
-							<div className="dms-empty">{t('empty.models')}</div>
+							<div className="dms-empty" role="status">{t('empty.models')}</div>
 						)}
 					</div>
 					{state.current !== null && dmsSliderLevels(state).length >= 2 && (

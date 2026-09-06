@@ -26,6 +26,7 @@ export declare const zh: {
     "empty.models": string;
     "empty.efforts": string;
     "effort.failed": string;
+    "effort.timeout": string;
     "notice.already": string;
     "notice.selectFailed": string;
     "toast.effortAuto": string;
@@ -54,6 +55,7 @@ export declare const en: {
     "empty.models": string;
     "empty.efforts": string;
     "effort.failed": string;
+    "effort.timeout": string;
     "notice.already": string;
     "notice.selectFailed": string;
     "toast.effortAuto": string;
