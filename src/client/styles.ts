@@ -210,6 +210,9 @@ export const CSS = `
 .dms-icon-slot { display: contents; }
 
 .dms-groups { flex: 1 1 auto; min-height: 0; overflow-y: auto; contain: content; }
+/* 空态占位：空态播报节点在 role=menu 容器外，用与 .dms-groups 同款弹性布局
+   补回列表区本来的位置（不挤压其余栏，消息也不会贴到菜单顶部）。 */
+.dms-groupsFill { flex: 1 1 auto; min-height: 0; overflow-y: auto; contain: content; }
 .dms-group + .dms-group { margin-top: 4px; }
 
 /* Collapsible provider header: a full-width toggle button. */
