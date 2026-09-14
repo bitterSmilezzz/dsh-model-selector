@@ -110,7 +110,7 @@ test('every file in the files array exists (nothing broken at pack time)', () =>
   }
 })
 
-test('loader id, plugin name and patch manifest id all agree with the package name', () => {
+test('loader id, plugin name and patch manifest name all agree with the package name', () => {
   const bundle = join(root, 'lib', 'client.js')
   if (existsSync(bundle)) {
     const id = readFileSync(bundle, 'utf8').match(/\bid:\s*"([^"]+)"/)?.[1]
@@ -118,7 +118,14 @@ test('loader id, plugin name and patch manifest id all agree with the package na
   }
   const patch = join(root, 'cordis.patch.yml')
   if (existsSync(patch)) {
-    assert.ok(readFileSync(patch, 'utf8').includes(`id: ${pkg.name}`), 'cordis.patch.yml id must equal the package name')
+    // The insert row loads the package by `name`; its `id` is the entry
+    // identifier later patches target, so it stays the short repo name and is
+    // deliberately NOT bound to the package name (npm renames keep loading).
+    const text = readFileSync(patch, 'utf8')
+    assert.ok(
+      text.includes(`name: '${pkg.name}'`) || text.includes(`name: ${pkg.name}`),
+      'cordis.patch.yml name must equal the package name',
+    )
   }
 })
 

@@ -6,5 +6,5 @@
 
 - insert:
     - id: dsh-model-selector
-      name: dsh-model-selector
+      name: '@bittersmilezzz/dsh-model-selector'
       inject: []

@@ -50,7 +50,7 @@ export function apply(ctx: ClientContext): void {
   }), 'dsh-model-selector: dictionaries')
   ctx.effect(() => {
     const tag = document.createElement('style')
-    tag.dataset.plugin = 'dsh-model-selector'
+    tag.dataset.plugin = '@bittersmilezzz/dsh-model-selector'
     tag.textContent = CSS
     document.head.appendChild(tag)
     return () => {

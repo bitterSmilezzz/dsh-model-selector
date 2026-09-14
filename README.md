@@ -1,4 +1,4 @@
-# dsh-model-selector
+# @bittersmilezzz/dsh-model-selector
 
 <p align="center">
   <img src="assets/cover.png" width="720" alt="dsh-model-selector：单层模型菜单 + 推理强度滑杆" />
@@ -26,6 +26,9 @@ DeepSeek Harness (DSH) 的**增强模型选择器（Model Selector）**：单层
 ## 安装
 
 ```bash
+# npm（推荐）：包名 @bittersmilezzz/dsh-model-selector
+dsh plugin --profile <profile> add @bittersmilezzz/dsh-model-selector
+# 或从 GitHub
 dsh plugin --profile <profile> add github:bitterSmilezzz/dsh-model-selector
 # 或本地路径
 dsh plugin --profile <profile> add <path-to-repo>

@@ -1,6 +1,6 @@
 {
-  "name": "dsh-model-selector",
-  "version": "0.1.17",
+  "name": "@bittersmilezzz/dsh-model-selector",
+  "version": "0.1.18",
   "description": "DeepSeek Harness 的增强模型选择器：单层菜单（搜索 + 分组）+ 底部内联推理强度（Effort）滑杆。",
   "type": "module",
   "main": "lib/index.js",
@@ -88,6 +88,23 @@
     "react-dom": "^18.2.0",
     "@deepseek-ai/dsh-client-store": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-session": "^0.1.5-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-store": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",

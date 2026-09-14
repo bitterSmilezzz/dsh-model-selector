@@ -1,7 +1,7 @@
 /**
 * Stylesheet for the enhanced model seat.
 *
-* Injected as one `<style data-plugin="dsh-model-selector">` tag by the client
+* Injected as one `<style data-plugin="@bittersmilezzz/dsh-model-selector">` tag by the client
 * apply and removed again on unload. Class names are prefixed `dms-` so they
 * cannot collide with CSS-module hashes from other plugins. Colors come only
 * from `--dsw-*` theme tokens, matching the shipped Menu material.
