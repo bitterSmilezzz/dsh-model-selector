@@ -1,0 +1,44 @@
+# 用 npm trusted publishing（GitHub OIDC）发布，无需长期 token，也不需要 OTP。
+#
+# 前置（一次性，在 npmjs.com 操作）：该包页面 → Settings → Trusted Publisher →
+#   Publisher: GitHub Actions
+#   Organization or user: bitterSmilezzz
+#   Repository: dsh-model-selector
+#   Workflow filename: publish.yml
+#   Environment: （留空）
+#   Allowed actions: npm publish
+#
+# 触发：Actions 页面手动 Run workflow，或 `gh workflow run publish.yml -R bitterSmilezzz/dsh-model-selector`。
+# 发布内容取自仓库中已提交的 lib/ 产物（本仓库 lib/ 入库，无需在此构建）。
+name: publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Report target version and refuse duplicates
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "target: $NAME@$VERSION"
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "::error::$NAME@$VERSION is already published"
+            exit 1
+          fi
+
+      - name: Publish to npm via OIDC
+        run: npm publish --access public
