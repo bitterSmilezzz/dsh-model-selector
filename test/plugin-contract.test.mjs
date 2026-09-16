@@ -12,7 +12,11 @@
  *  - every `exports`/`main`/`types` target must point at a file the build
  *    actually emits (a declared types path that never exists breaks the
  *    package for every consumer);
- *  - the loader id, plugin name and patch manifest id must agree.
+ *  - the loader id, plugin name and patch manifest id must agree;
+ *  - the composer model seat must keep targeting the shipped
+ *    `conversation.input.model` slot at priority -1 (the single-slot
+ *    shadowing contract, otherwise the official ModelSelect silently
+ *    returns and the enhanced UI disappears).
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -127,6 +131,29 @@ test('loader id, plugin name and patch manifest name all agree with the package 
       'cordis.patch.yml name must equal the package name',
     )
   }
+})
+
+test('the composer model seat keeps targeting the shipped conversation.input.model slot', () => {
+  const src = readFileSync(join(root, 'src', 'client', 'index.ts'), 'utf8')
+  const start = src.indexOf("scope.slots.inject('conversation.input.model'")
+  assert.notEqual(start, -1, "src/client/index.ts no longer injects the 'conversation.input.model' seat")
+  // Slice from the seat injection on: the registration is the file's last block,
+  // so every assertion below is scoped to THIS registration and cannot be
+  // satisfied by an unrelated priority elsewhere in the file.
+  const seat = src.slice(start)
+  assert.match(seat, /slots\.register\(\{/, 'the shipped seat must still be taken over with slots.register')
+  assert.match(seat, /name:\s*'conversation\.input\.model'/, 'register() must keep the same named seat')
+  // ui-conversation declares the seat as kind 'single' (one cell, the LOWEST
+  // priority renders). The shipped ui-model-selection occupant passes no
+  // priority, i.e. the default 0, so -1 is the whole reason this plugin's
+  // ModelSelect renders instead of the official one. Dropping or raising it
+  // silently restores the official UI.
+  assert.match(seat, /priority:\s*-1\b/, 'priority must stay -1 (single slot renders the lowest priority; the shipped occupant is at default 0)')
+  // Remaining options as currently implemented: own dictionary namespace and
+  // the per-session injected face.
+  assert.match(seat, /locale:\s*NS\b/, 'the seat keeps its own dictionary namespace')
+  assert.match(seat, /inject:\s*\(sessionId:\s*string\)/, 'the seat still builds its injected face from the session id')
+  assert.match(seat, /\}, ModelSelect\)\)/, 'the seat must still render this plugin\'s ModelSelect')
 })
 
 test('the client type declaration is not stale relative to its sources', () => {

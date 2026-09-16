@@ -60,6 +60,14 @@ export function apply(ctx: ClientContext): void {
   ctx.inject(['modelDirectories'], (scope) => {
     const models = scope.modelDirectories
     const sessions = scope.sessions
+    // 有意的座位层重叠，勿当 bug「修掉」：官方 @deepseek-ai/dsh-client-ui-model-selection
+    // 自带同名座位（packages/client/ui-model-selection/src/client/index.ts:177，
+    // 未传 priority → 默认 0），本插件靠 priority: -1 遮蔽它。ui-conversation 把该座位
+    // 声明为 single/session（kind: 'single'; scope: 'session'），single 槽「priority 升序
+    // 取最低者渲染」，故 -1 恒胜出。两者共用同一份 ctx.modelDirectories 会话目录，
+    // 任一入口的切换就是另一入口的显示——重叠是设计取舍，不是冲突。
+    // 重新评估触发条件：官方若改动该座位的默认优先级、或把它从 single 改成 chain
+    // （chain 每项都参与渲染，遮蔽不生效），此遮蔽即失效，不能默认仍然成立。
     scope.slots.inject('conversation.input.model', () => scope.slots.register({
       name: 'conversation.input.model',
       locale: NS,

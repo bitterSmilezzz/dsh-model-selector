@@ -570,6 +570,14 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const inactiveMenuRef = react.useRef<HTMLDivElement | null>(null);
 	const menuMaxHeight = useAnchoredMaxHeight(menuAbove ? menuRef : inactiveMenuRef, MENU_MAX_HEIGHT, open);
 	const [belowMaxHeight, setBelowMaxHeight] = react.useState(MENU_MAX_HEIGHT);
+	// 为何不采纳官方 useAnchoredPosition（与文件头「不用官方 Menu」并列的第二个不采纳决定）：
+	// 该 hook 的水平起点固定是 anchor 左缘（left = rect.left，仅越界时钳进视口），没有
+	// 「右缘对齐 anchor 右缘」这种模式；而本菜单默认就是右锚定（.dms-menu 的 right:0，与
+	// seat 右缘对齐），只有右侧放不下时才钳到视口内改用 left。方向也不由 hook 决定：
+	// side 是调用方写死的 'top' | 'bottom'，而这里要按 trigger 上下空间自动选边
+	// （dmsMenuAbove）；且 hook 返回的是 fixed 定位坐标，本菜单是 .dms-root 内的
+	// absolute + bottom/right 锚定，采纳它等于同时改默认对齐、方向策略与定位模型——
+	// 属用户可见的运行时行为变更，故保留自研测量。
 	// 水平钳位：seat 右缘放不下整幅菜单（窄窗口）时改为 left 锚定，undefined = 默认右锚定。
 	const [menuLeft, setMenuLeft] = react.useState<number | undefined>(undefined);
 	// 布局生效前测量（对齐 useAnchoredMaxHeight 的 useLayoutEffect 模式）：

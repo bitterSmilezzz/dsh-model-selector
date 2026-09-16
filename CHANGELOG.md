@@ -6,6 +6,21 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.1.20] - 2026-09-16
+
+### 变更
+
+- **无运行时行为变更**：`lib/client.js` 与 `lib/types/*.d.ts` 逐字节未变，仅 source map 随注释再生。
+- **记录两处「官方原语不采纳」的判据**（与既有的「不用官方 `Menu`」并列，写进代码注释）：
+  - 官方 `useAnchoredPosition` 的水平起点恒为 anchor 左缘、`side` 由调用方写死、返回 `fixed`
+    坐标；本插件菜单默认右缘对齐 seat，且需按 trigger 上下空间自动选边，改用它等于同时改
+    默认对齐、方向策略与定位模型 → 属用户可见的行为变更，故保留自研测量。
+  - 官方 `Menu` 把每个条目渲染为 `<button role="menuitem">`，无法承载 effort 滑杆与搜索框。
+- **新增座位契约回归测试**：钉住 `conversation.input.model` 单槽的 `priority: -1` 遮蔽关系
+  （官方同名座位未传 priority 即默认 0）。官方若改该座位默认优先级、或把它从 `single` 改成
+  `chain`，测试会立刻变红，而不是静默回退成官方 `ModelSelect`。
+- 回归测试 73 → 74 项，双半区 typecheck 与构建全绿。
+
 ## [0.1.19] - 2026-09-15
 
 ### 变更
