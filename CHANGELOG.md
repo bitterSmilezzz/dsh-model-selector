@@ -6,6 +6,19 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.1.21] - 2026-09-16
+
+### 变更
+
+- **无运行时行为变更**：`lib/` 未改动，本版只新增守卫测试与文档。
+- 新增**依赖侧守卫测试** `test/official-seat-shadow.test.mjs`：钉住「官方 `ui-model-selection`
+  注册 `conversation.input.model` 时仍不声明 `priority`」——这是本插件 `priority: -1` 遮蔽
+  成立的前提。官方若开始声明优先级（尤其 `<= -1`）或把该座位改成 chain，测试立即变红，
+  而不是等用户先发现模型选择器变回了官方原生 UI。
+- `README`「已知风险」补两处说明：守卫测试的存在；以及提交第三方商城（DSH-Store）时该遮蔽
+  机制需要解释的要点（走官方 slot shadowing 语义，未禁用/替换任何官方 entry）。
+- 回归测试 74 → 75 项。
+
 ## [0.1.20] - 2026-09-16
 
 ### 变更
