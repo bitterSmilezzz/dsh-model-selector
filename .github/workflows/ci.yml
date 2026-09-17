@@ -1,0 +1,76 @@
+# CI 门禁：源码 → 类型 → 测试 → 构建产物一致。
+#
+# 为什么需要「构建产物一致」这一关：本插件是浏览器端 UI 插件，`lib/` 是**入库的构建产物**
+# （git 跟踪），浏览器实际加载的是 `lib/client.js`。源码改了但忘记 `pnpm build` 就提交/发布时，
+# 用户拿到的是旧产物 —— 这一步专门拦这种情况。
+#
+# 触发：push 到 main、以及所有 pull_request。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 非交互环境（CI 无 TTY）下 corepack 需要下载 pnpm，显式关掉交互询问，避免卡住。
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
+permissions:
+  contents: read
+
+# 同一分支/PR 的旧运行被新提交取代时取消，省 runner 分钟数。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # corepack enable 必须在 setup-node 之前：setup-node 的 `cache: pnpm` 会先调用
+      # `pnpm store path` 来定位缓存目录，此时 pnpm 必须已经可用。
+      #
+      # `corepack install --global` 是版本钉子：本仓库 package.json 没有 packageManager 字段，
+      # 不钉的话 corepack 会用自己缓存的「最后已知良好」版本，将来可能是读不懂 lockfileVersion 9.0
+      # 的新 major。12.4.1 与生成 pnpm-lock.yaml 的版本一致。
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack install --global pnpm@12.4.1
+          pnpm --version
+
+      - name: Setup Node.js 24 with pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      # 必须 install：`pnpm test` 依赖 node_modules —— 官方 @deepseek-ai 包在 devDependencies，
+      # 测试会直接读取它们与 src/、lib/ 的内容。
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify committed lib/ matches a fresh build
+        run: |
+          if ! git diff --exit-code -- lib; then
+            echo "::error::lib/ 与源码不一致：请在本地跑 pnpm build 后提交 lib/"
+            exit 1
+          fi
+          # git diff 看不见未跟踪文件：构建若产出新的 chunk/文件，也属于「忘了提交 lib/」。
+          UNTRACKED=$(git ls-files --others --exclude-standard -- lib)
+          if [ -n "$UNTRACKED" ]; then
+            echo "::error::lib/ 与源码不一致：请在本地跑 pnpm build 后提交 lib/（未提交的新文件：$UNTRACKED）"
+            exit 1
+          fi

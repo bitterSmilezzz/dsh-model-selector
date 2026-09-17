@@ -4,7 +4,7 @@
   <img src="assets/cover.png" width="720" alt="dsh-model-selector：单层模型菜单 + 推理强度滑杆" />
 </p>
 
-DeepSeek Harness (DSH) 的**增强模型选择器（Model Selector）**：单层菜单（搜索 + 分组）+ 底部内联推理强度（Reasoning Effort）滑杆。从 dsh-ui-tweaks 按功能拆分出的独立插件包。
+**增强模型选择器（Model Selector）** —— DeepSeek Harness (DSH) 的**增强模型选择器**：单层菜单（搜索 + 分组）+ 底部内联推理强度（Reasoning Effort）滑杆。从 dsh-ui-tweaks 按功能拆分出的独立插件包。
 
 ## 界面预览
 
@@ -16,11 +16,13 @@ DeepSeek Harness (DSH) 的**增强模型选择器（Model Selector）**：单层
 
 - 替换官方输入区的模型选择 seat（`conversation.input.model`，shadow 方式叠加，不禁用官方组件）
 - 单层模型菜单：名称搜索过滤（命中片段高亮）+ 提供商分组折叠，选中行与供应商标可见高亮，打开自动滚到当前选中行
+- 搜索宽容：大小写、变音符与 `İ`/`café` 这类 Unicode 折叠差异都能命中（NFKD 归一化；高亮只在码位长度不变时标注，不画错位置）
 - 菜单高度按视口实测钳位，弹出方向自适应（取上下空间更大一侧），矮窗口自动收不溢出；seat 右缘放不下时水平钳到视口内
-- 键盘可完整操作：方向键在结果间移动、搜索框内 Enter 选中首个命中、Escape 先清搜索词再关闭并还原焦点
+- 键盘可完整操作：方向键在结果间移动、搜索框内 Enter 选中首个命中、Escape 先清搜索词再关闭并还原焦点；IME 组合输入的确认键不会被误当成「选中首个命中」
+- 无障碍：搜索框是 combobox（结果列表 listbox / 分组视图 menu）、roving tabindex 只留一个 Tab 停靠点（全折叠时落在组头）、焦点指示与选中态可辨、状态变化经常驻 live region 播报
 - 选中模型后可展开底部内联**推理强度滑杆**，实时显示当前档位名与该档位说明
 - 切换被宿主拒绝时，失败原因用官方 Toast 在输入区上方播报（菜单已关闭也能看到）
-- 选择推理模型会自动落到**最强思考档**，并在成功后提示落到的档位（行上有「推理」标记说明）
+- 选择推理模型会自动落到**最强思考档**（仅限已知档位；适配器自造档位不猜），并在成功后提示落到的档位（行上有「推理」标记说明）
 - 与 `/model` 弹窗共用官方 `modelDirectories` 目录，两处实时同步
 
 ## 安装
@@ -61,15 +63,33 @@ dsh plugin --profile <profile> add <path-to-repo>
 
 ## 开发
 
-标准双半区结构，`lib/` 为构建产物：
+标准双半区结构，`lib/` 为构建产物（**入库**：CI 会校验重建结果与提交一致）：
 
 ```bash
 pnpm install
-pnpm typecheck   # 双 program（host + client）
-pnpm build       # tsc host + tsdown client bundle
+pnpm typecheck          # 双 program（host + client）
+pnpm build              # tsc host + tsdown client bundle + client d.ts
+pnpm test               # node --test（纯函数 + 产物/契约门禁）
+pnpm validate:registry  # 上架前自检（当前 = pnpm test）
 ```
 
-调优常量集中在 `src/client/ModelSelect.tsx` 顶部（`DIRECTORY_STALE_MS` / `MAX_VISIBLE_HITS` / `EFFORT_COMMIT_TIMEOUT_MS`）与 `src/client/menuFit.ts`（`MENU_MAX_HEIGHT` / `MENU_VIEWPORT_MARGIN`），含义与调法见各常量旁注释；刻意不做配置化——纯 UI 插件无 settings namespace，不为此引入配置基建。
+纯函数模块与调优常量（含义与调法见各常量旁注释）：
+
+| 位置 | 内容 |
+| --- | --- |
+| `src/client/ModelSelect.tsx` 顶部 | `DIRECTORY_STALE_MS` / `MAX_VISIBLE_HITS` / `EFFORT_COMMIT_TIMEOUT_MS` |
+| `src/client/menuFit.ts` | `MENU_MAX_HEIGHT` / `MENU_VIEWPORT_MARGIN` |
+| `src/client/effortCanvas.ts` | `DRAG_EASE` / `IDLE_EASE` / `SETTLE_EPSILON`（辐射特效手感） |
+| `src/client/effort.ts` | `EFFORT_RANK`（档位强弱序，决定「最强思考档」） |
+
+`search.ts`（折叠匹配/命中窗口/空态）、`keys.ts`（键盘状态机）、`copy.ts`（trigger
+文案链）、`roving.ts`（行键与 Tab 落点）都是纯函数模块，`node --test` 直接跑源码。
+
+刻意不做配置化——纯 UI 插件无 settings namespace，不为此引入配置基建。
+
+改完源码必须 `pnpm build` 并提交 `lib/`：CI（`.github/workflows/ci.yml`）会跑
+`pnpm build && git diff --exit-code -- lib`，入库产物与重建结果不一致即失败
+（测试里也钉了源码内容指纹，本地 `pnpm test` 即可发现「改了源码没重建」）。
 
 ## License
 

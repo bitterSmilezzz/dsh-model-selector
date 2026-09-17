@@ -139,12 +139,45 @@ function usedClasses(text) {
   return out
 }
 
+/**
+ * The `{...}` block opening at `open` — braces balanced, string literals and
+ * comments skipped. Delimiting a literal by "the next `\n};`" instead breaks the
+ * moment a formatter moves the closing brace (`}\n;`), which is exactly what
+ * happened here.
+ */
+function balancedSlice(text, open) {
+  let depth = 0
+  let i = open
+  while (i < text.length) {
+    const ch = text[i]
+    if (ch === '"' || ch === "'" || ch === '`') { i = skipLiteral(text, i); continue }
+    if (ch === '/' && text[i + 1] === '/') {
+      const nl = text.indexOf('\n', i)
+      i = nl === -1 ? text.length : nl + 1
+      continue
+    }
+    if (ch === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      i = end === -1 ? text.length : end + 2
+      continue
+    }
+    if (ch === '{') depth += 1
+    else if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return text.slice(open, i + 1)
+    }
+    i += 1
+  }
+  return text.slice(open)
+}
+
 /** Keys of one dictionary object literal in locales.ts source. */
 function dictKeys(localesText, name) {
-  const body = localesText.slice(localesText.indexOf(`const ${name}`))
-  const end = body.indexOf('\n};')
+  const decl = new RegExp(`\\bconst\\s+${name}\\s*=\\s*\\{`).exec(localesText)
+  if (decl === null) return new Set()
+  const body = balancedSlice(localesText, decl.index + decl[0].length - 1)
   const keys = new Set()
-  for (const match of body.slice(0, end).matchAll(/^\s*"([^"]+)":/gm)) keys.add(match[1])
+  for (const match of body.matchAll(/^\s*"([^"]+)":/gm)) keys.add(match[1])
   return keys
 }
 
@@ -234,4 +267,19 @@ test('self-test: dictionary and reference parsers are not vacuous', () => {
     [],
     'an empty dictionary must parse as empty so the vacuity guard can fire',
   )
+})
+
+test('self-test: dictionary parser is delimited by braces, not by a "\\n};" newline', () => {
+  // The old `indexOf('\n};')` scan ran past the dictionary as soon as a
+  // formatter put `}` and `;` on separate lines, swallowing the next
+  // dictionary's keys (zh would silently inherit en's).
+  const reformatted = 'const zh = {\n  "a.b": "x",\n}\nconst en = {\n  "a.b": "x",\n  "z.z": "y",\n};'
+  assert.deepEqual([...dictKeys(reformatted, 'zh')].sort(), ['a.b'])
+  assert.deepEqual([...dictKeys(reformatted, 'en')].sort(), ['a.b', 'z.z'])
+  // A brace inside a string value must not close the dictionary early.
+  const withBrace = 'const zh = {\n  "a.b": "a }; b",\n  "a.c": "y",\n};'
+  assert.deepEqual([...dictKeys(withBrace, 'zh')].sort(), ['a.b', 'a.c'])
+  // Comments may carry braces too; they are not keys and not delimiters.
+  const withComment = 'const zh = {\n  // { not a brace\n  "a.b": "x",\n};'
+  assert.deepEqual([...dictKeys(withComment, 'zh')].sort(), ['a.b'])
 })

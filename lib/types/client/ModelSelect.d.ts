@@ -26,8 +26,10 @@ interface EffortSliderProps {
     state: DirectoryState;
     select: (selection: ModelSelection) => Promise<boolean>;
     t: TranslateNS<'modelSelector'>;
+    /** 提交失败（超时/拒绝）时回调：让菜单把错误条归到「加载失败」之外（见 renderErrorStrip）。 */
+    onSelectFailure: () => void;
 }
-export declare const EffortSlider: react.MemoExoticComponent<({ state, select, t }: EffortSliderProps) => react.JSX.Element | null>;
+export declare const EffortSlider: react.MemoExoticComponent<({ state, select, t, onSelectFailure }: EffortSliderProps) => react.JSX.Element | null>;
 interface ModelSelectProps {
     locked: boolean;
     available: boolean;

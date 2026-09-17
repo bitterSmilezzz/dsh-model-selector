@@ -21,12 +21,20 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the model-selection plugin's Context merge (ctx.modelDirectories)
 // plus the injected face type the seat registration hands to the component.
 import type { ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client'
-import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { ModelSelect, zhDict, enDict } from './ModelSelect.tsx'
 import { CSS } from './styles.ts'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'modelSelector'
+
+/**
+ * 座位优先级。ui-conversation 把 `conversation.input.model` 声明为 kind 'single'
+ * （单槽按 priority 升序取最低者渲染），官方占用者
+ * （@deepseek-ai/dsh-client-ui-model-selection）注册时不传 priority（即默认 0），
+ * 故 -1 恒胜出。**改这个值等于静默换回官方 UI** —— test/plugin-contract.test.mjs
+ * 直接断言本常量（而不是扫源码文本，那样一行注释就能骗过它），注册处也不许再写裸字面量。
+ */
+export const SEAT_PRIORITY = -1
 
 /** Required services: the registry, session lookup, locale, the slot seat, and the model directory's Remote faces. */
 export const inject = [
@@ -71,7 +79,7 @@ export function apply(ctx: ClientContext): void {
     scope.slots.inject('conversation.input.model', () => scope.slots.register({
       name: 'conversation.input.model',
       locale: NS,
-      priority: -1,
+      priority: SEAT_PRIORITY,
       inject: (sessionId: string): ModelSelectInjected => {
         const sid = sessionId as SessionId
         const directory = models.directoryFor(sid)

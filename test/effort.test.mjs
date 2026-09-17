@@ -117,33 +117,39 @@ test('dmsEffortBusy：自身提交中或目录上有 select 在途都算忙（�
   assert.equal(dmsEffortBusy(true, 'selecting'), true, '两者叠加 → 忙')
 })
 
-test('dmsShouldAdoptLateSuccess：回滚后无新提交/无拖动时采纳迟到成功', () => {
+test('dmsShouldAdoptLateSuccess：回滚后无新提交/无拖动/模型未变时采纳迟到成功', () => {
   // committedRef 仍等于回滚前的 previous、提交纪元未推进（epoch === epochAtCommit）、
-  // 无拖动、无提交在途 → 迟到成功仍对应当前链
-  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, false, 1, 1), true)
+  // 无拖动、无提交在途、生效模型仍是提交时那个 → 迟到成功仍对应当前链
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, false, 1, 1, true), true)
 })
 
 test('dmsShouldAdoptLateSuccess：新提交已改写 committedRef 时不采纳', () => {
   // 用户超时后又提交成功到别的档（committedRef 已变成 'high'）→ 迟到结果作废
-  assert.equal(dmsShouldAdoptLateSuccess('high', 'low', false, false, 2, 1), false)
+  assert.equal(dmsShouldAdoptLateSuccess('high', 'low', false, false, 2, 1, true), false)
 })
 
 test('dmsShouldAdoptLateSuccess：提交 B 失败回滚后（epoch 已推进）不采纳 A 的迟到成功', () => {
   // 核心回归场景：A 超时回滚（epoch=1）后用户再提交 B（epoch=2），B 失败回滚——
   // committedRef 与 A 回滚后是同一个值（'low' === 'low'），纯值比较会把 A 的
   // 迟到成功误判成仍属当前意图链；纪元已推进，必须拒绝。
-  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, false, 2, 1), false)
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, false, 2, 1, true), false)
 })
 
 test('dmsShouldAdoptLateSuccess：epoch 未变但 committedRef 被改写也不采纳', () => {
   // 纪元相同不代表链没变（目录同步 effect 等也会改写 committedRef）：值条件仍要
   // 独立成立，两个条件缺一不可。
-  assert.equal(dmsShouldAdoptLateSuccess('high', 'low', false, false, 1, 1), false)
+  assert.equal(dmsShouldAdoptLateSuccess('high', 'low', false, false, 1, 1, true), false)
 })
 
 test('dmsShouldAdoptLateSuccess：拖动中或提交在途时不采纳（防止覆盖活动操作）', () => {
-  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', true, false, 1, 1), false, '拖动中')
-  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, true, 1, 1), false, '提交在途')
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', true, false, 1, 1, true), false, '拖动中')
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, true, 1, 1, true), false, '提交在途')
+})
+
+test('dmsShouldAdoptLateSuccess：生效模型已被外部改写时不采纳（sameModel=false）', () => {
+  // 提交超时回滚期间，另一个入口/宿主推送把 current 换成别的模型：next/index 是在
+  // 旧模型的档位表上算出来的，写回 UI 会显示一个后端并未生效的档位。
+  assert.equal(dmsShouldAdoptLateSuccess('low', 'low', false, false, 1, 1, false), false)
 })
 
 test('dmsPointerRaw：指针水平位置线性映射到档位区间（未取整，拖动中途落两档之间）', () => {

@@ -39,6 +39,40 @@ export function maxEffortOf(reasoning: ModelReasoning): string | undefined {
   return best?.id
 }
 
+/**
+ * 已知档位的秩；适配器自造的非规范 id（如 'turbo'）返回 undefined —— 与
+ * 「已知但秩为 0」（off）区分开。maxEffortOf 对并列的未知档取首个，把它当
+ * 「最强档」提交等于随机挑一个档、还可能被宿主拒，故调用方必须先过这一关。
+ */
+export function dmsEffortRank(id: string): number | undefined {
+  return Object.prototype.hasOwnProperty.call(EFFORT_RANK, id)
+    ? EFFORT_RANK[id as keyof typeof EFFORT_RANK]
+    : void 0
+}
+
+/** 选中模型时的自动档位决策。 */
+export interface ChoosePlan {
+  /** 随选择提交的档位 id；undefined = 不提交 reasoningEffort（交给宿主用模型默认档）。 */
+  effort: string | undefined
+  /** 是否播报「已自动选到最强思考档」：只有确实替用户做了决定（提交档 ≠ 模型默认档）才播。 */
+  autoRaised: boolean
+}
+
+/**
+ * 选择模型时自动落到最强档的决策（从 choose() 搬出并修正）：
+ *  - 非推理模型 / 无档位 → 不提交 effort；
+ *  - 最强档是 'off'（模型只提供 off）→ 不提交；
+ *  - 最强档是**非规范 id**（rank 未知）→ 不提交：maxEffortOf 对并列未知档取
+ *    首个，把它当「最强」提交会挑错档甚至被宿主拒（用户看到「切换失败」）；
+ *  - 否则提交已知最强档；只有它不等于模型声明的默认档时才播报落点。
+ */
+export function dmsChoosePlan(reasoning: ModelReasoning | undefined): ChoosePlan {
+  if (reasoning === void 0) return { effort: void 0, autoRaised: false }
+  const best = maxEffortOf(reasoning)
+  if (best === void 0 || best === 'off' || dmsEffortRank(best) === void 0) return { effort: void 0, autoRaised: false }
+  return { effort: best, autoRaised: best !== reasoning.defaultEffort }
+}
+
 export function dmsEffortIndex(levels: readonly EffortLevel[], id: string | undefined): number {
   return levels.findIndex((level) => level.id === id)
 }
@@ -97,12 +131,15 @@ export function dmsEffortBusy(committing: boolean, status: DirectoryState['statu
  * 只有当自回滚以来没有任何新的提交改写 committedRef（仍等于回滚前的档位）、
  * 提交纪元未推进（epoch === epochAtCommit，即期间没有发起过新提交——提交失败
  * 回滚后 committedRef 会回到与上一轮回滚相同的值，值比较无法区分「无新提交」
- * 与「新提交失败回滚」，纪元才能区分）、且当前无拖动/提交在途时，迟到结果才
- * 仍对应当前唯一的意图链——此时 UI 处于「回滚但后端已生效」的错位态，应补
- * 一次同步而不是保持回滚。否则以新操作链为准。
+ * 与「新提交失败回滚」，纪元才能区分）、当前无拖动/提交在途，**且生效模型仍是
+ * 发起提交时的那个**（sameModel）时，迟到结果才仍对应当前唯一的意图链——此时
+ * UI 处于「回滚但后端已生效」的错位态，应补一次同步而不是保持回滚。
+ * 否则以新操作链为准：模型被外部改写（另一入口切换 / 宿主推送新投影 / 重连后
+ * 同步出别的选择）时，next/index 是在旧模型的档位表上算出来的，写回 UI 会显示
+ * 一个后端并未生效的档位。
  */
-export function dmsShouldAdoptLateSuccess(committed: string, previous: string, dragging: boolean, committing: boolean, epoch: number, epochAtCommit: number): boolean {
-  return committed === previous && epoch === epochAtCommit && !dragging && !committing
+export function dmsShouldAdoptLateSuccess(committed: string, previous: string, dragging: boolean, committing: boolean, epoch: number, epochAtCommit: number, sameModel: boolean): boolean {
+  return sameModel && committed === previous && epoch === epochAtCommit && !dragging && !committing
 }
 
 /**

@@ -9,15 +9,23 @@
 #   Allowed actions: npm publish
 #
 # 触发：Actions 页面手动 Run workflow，或 `gh workflow run publish.yml -R bitterSmilezzz/dsh-model-selector`。
-# 发布内容取自仓库中已提交的 lib/ 产物（本仓库 lib/ 入库，无需在此构建）。
+#
+# 发布内容取自仓库中已提交的 lib/ 产物（本仓库 lib/ 入库，浏览器端加载的就是它）。因此发布前
+# 先跑一遍 typecheck / test / build，并用 `git diff --exit-code -- lib` 确认「提交的产物」与
+# 「源码重新构建的产物」一致 —— 源码改了忘 build 就发布，会在这里被拦下，而不是让用户先发现。
+# 发布成功后再把 v<version> tag 推到远端（tag 已存在则跳过并告警，不失败）。
 name: publish
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  id-token: write
+  contents: write # 发布后 push tag 需要
+  id-token: write # npm trusted publishing（OIDC）
+
+env:
+  # 非交互环境（CI 无 TTY）下 corepack 需要下载 pnpm，显式关掉交互询问，避免卡住。
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
 
 jobs:
   publish:
@@ -25,11 +33,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # corepack enable 必须在 setup-node 之前：setup-node 的 `cache: pnpm` 会先调用
+      # `pnpm store path` 来定位缓存目录，此时 pnpm 必须已经可用。
+      #
+      # `corepack install --global` 是版本钉子：本仓库 package.json 没有 packageManager 字段，
+      # 不钉的话 corepack 会用自己缓存的「最后已知良好」版本，将来可能是读不懂 lockfileVersion 9.0
+      # 的新 major。12.4.1 与生成 pnpm-lock.yaml 的版本一致。
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack install --global pnpm@12.4.1
+          pnpm --version
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
 
+      # 先做最便宜的门禁：版本已发布就没必要再装依赖、跑测试。
       - name: Report target version and refuse duplicates
         run: |
           NAME=$(node -p "require('./package.json').name")
@@ -40,5 +62,53 @@ jobs:
             exit 1
           fi
 
+      # 必须 install：`pnpm test` 依赖 node_modules —— 官方 @deepseek-ai 包在 devDependencies，
+      # 测试会直接读取它们与 src/、lib/ 的内容。
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify committed lib/ matches a fresh build
+        run: |
+          if ! git diff --exit-code -- lib; then
+            echo "::error::lib/ 与源码不一致：请在本地跑 pnpm build 后提交 lib/"
+            exit 1
+          fi
+          # git diff 看不见未跟踪文件：构建若产出新的 chunk/文件，也属于「忘了提交 lib/」。
+          UNTRACKED=$(git ls-files --others --exclude-standard -- lib)
+          if [ -n "$UNTRACKED" ]; then
+            echo "::error::lib/ 与源码不一致：请在本地跑 pnpm build 后提交 lib/（未提交的新文件：$UNTRACKED）"
+            exit 1
+          fi
+
+      - name: Verify CHANGELOG has a section for this version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          grep -q "^## \[$VERSION\]" CHANGELOG.md || {
+            echo "::error::CHANGELOG 缺少 $VERSION 段落"
+            exit 1
+          }
+
       - name: Publish to npm via OIDC
         run: npm publish --access public
+
+      - name: Tag the released commit
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          # checkout 默认是浅克隆且不带 tag（--depth=1 --no-tags），本地 `git tag -l` 在这里
+          # 永远看不到远端已有 tag，会把重复 tag 当成新 tag 去 push 然后失败。以远端为准判断。
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
+            echo "::warning::$TAG 已存在，跳过打 tag"
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"

@@ -6,6 +6,97 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.2.0] - 2026-09-17
+
+多视角审查（React 正确性 / 无障碍 / 测试与发布链路）后的集中修复与加固。
+
+### 修复
+
+- **菜单水平钳位坐标系**：钳位算的是视口坐标，却直接写进 `.dms-root` 内的
+  `absolute` 元素 `left` —— 参考系相差 root 左缘。窄窗口下菜单整体右移，横向溢出
+  （`rect.right > innerWidth`）时甚至整幅画到屏外，恰是钳位要避免的现象。
+- **拖动落回同一档时旋钮停在两档之间**：`commit()` 的「同档早退」跳过了 preview
+  归一化，而拖动落点是未取整的分数；旋钮/进度条/画布会停在档位之间且没有 effect
+  会纠正它（键盘路径不受影响）。
+- **搜索漏检**：匹配用 `toLowerCase()` 后取下标切原串，而大小写/变音符折叠会改变
+  码位长度 —— `İstanbul`（U+0130）用 ASCII 小写名 `istanbul` 根本搜不到。改为
+  NFKD 折叠匹配 + 仅在长度不变时给高亮区间（宁可不高亮，也不画错位置）。
+- **非规范档位 id 被当成「最强档」自动提交**：`maxEffortOf` 对并列未知 rank 取首个，
+  于是适配器自造的档位（如 `turbo`）可能被当作最强档提交并被宿主拒绝（用户看到
+  「切换失败」）。现在只自动提交已知档位（`off` 除外），否则交给宿主默认档。
+- **空态优先级**：目录为空而用户又输了关键词时显示「没有匹配『x』的模型」，把用户
+  引向改关键词；真相是「没有可用的模型」。无模型判定现在优先。
+- **IME 确认键误切模型**：WebKit 在 `compositionend` 后补发的 Enter 带
+  `isComposing === false`，中文候选上屏会直接选中首个命中并切换模型。现在除
+  `isComposing` 外还认 `keyCode 229`。
+- **busy 期间的悬挂菜单**：选择在途时 `onBlur` 直接返回，焦点离开菜单也不关，
+  而 Escape 已不再冒泡到菜单（keydown 目标在菜单外）—— 只能靠鼠标点一下才收起。
+  现在失焦照常关闭，与外部点击路径语义一致。
+- **迟到 `close(true)` 抢焦点**：RPC 在途期间用户关掉菜单/移走焦点后，成功回调
+  仍会 `close(true)` 把焦点从用户当前控件抢回 trigger，并清掉刚输入的搜索词。
+  现在只在菜单仍打开时才关。
+- **菜单内点击误关菜单**：点击内边距/标签/分组间隙等非可聚焦区域会让浏览器把焦点
+  收回 body，`onBlur` 误判为「离开菜单」。现在 relatedTarget 为空时只有窗口失焦
+  才关（菜单外点击由 outside-pointer 路径判定）。
+- **Escape 分层把 trigger 当「菜单内」**：焦点在 trigger 上按 Esc 会被清词逻辑拽进
+  搜索框，要按两次才关。
+- **`locked` 关闭菜单后焦点掉回 body**：trigger 已禁用时 `focus()` 是空操作，键盘
+  用户丢失位置。现在退到 root 容器（`tabIndex=-1`）承接。
+- **effort 提交失败点亮「加载失败」条**：错误来源标记缺失，滑杆失败会渲染出
+  加载错误条 + 无用的「重新加载」按钮。
+- **迟到采纳缺模型身份判据**：超时回滚期间生效模型被外部改写时，旧模型的档位表
+  算出的结果会被写回 UI（显示一个后端并未生效的档位）。判据增加「生效模型未变」。
+- **同步 effect 依赖缺档位集合**：同一模型、档位个数不变但档位 id 变了（目录刷新
+  把 `high` 换成 `xhigh`）时读数落到原始 id、preview 与新档位错位。
+
+### 无障碍
+
+- **选中行的键盘焦点完全不可见**：`:focus-visible` 与选中态用了同一个背景 token，
+  而 roving 的默认落点恰恰优先选中行。焦点指示改为内描边，与选中/悬停三态两两可辨。
+- **组头参与 Tab 序**：组头此前恒 `tabIndex=-1`，而「全部折叠」时 roving 默认落点
+  正是首个组头 —— 没有任何元素承接 `tabIndex=0`，Tab 直接跳过整个列表。现在活动
+  组头可 Tab（其余仍 -1）。
+- **搜索框补 combobox 语义**：`role="combobox"` + `aria-expanded` + `aria-autocomplete`，
+  搜索态结果容器为 `listbox`、行用 `option` + `aria-selected`（分组态仍是 menu /
+  menuitemradio）。
+- **live region 常驻**：命中计数、notice、滑杆错误此前是「插入式」live region，各
+  AT 上首次播报不可靠；现在容器常驻、内容随状态更新。0 命中时不再同帧播报两条。
+- **失败可见**：目录加载失败、分组失败改 `role="alert"`；`aria-busy` 从 `.dms-menu`
+  移到 `role=menu` 容器，不再罩住 live region 压制播报。
+- **`aria-controls` 悬空修正**：空态时结果容器不渲染，不再指向不存在的 id。
+- 方向键/Home/End 在无行可去时不再吞键（搜索框内仍可移光标）；「推理」徽标的说明
+  补一条视觉隐藏的 `role=note`（原先只在 `title` 上，键盘/读屏用户拿不到）。
+
+### 变更
+
+- 抽纯函数模块：`search.ts`（折叠/命中窗口/高亮/空态）、`keys.ts`（键盘状态机/环绕
+  下标）、`copy.ts`（trigger 文案链）；行键构造收敛到 `roving.ts` 的
+  `dmsRowKey`/`dmsHeaderKey`（此前 5 处各拼模板串，一次局部改名就能静默废掉 roving）。
+- 座位优先级提成导出常量 `SEAT_PRIORITY`（测试改为值断言，不再扫源码文本）。
+- `choose` 引用稳定化（busy/current/choices/open 经 ref 读取），Toast `onDone` 与
+  滑杆失败回调稳定化：一次模型切换不再让数百行的自定义 memo 全线失效。
+- `styles.ts` 的 CSS 常量加显式 `: string` 注解：`lib/types/client/styles.d.ts`
+  从 19KB 字面量类型缩到几十字节。
+- `files` 精确列出（不再把 `lib/tsbuildinfo` 打进本地 tarball），新增
+  `validate:registry` 脚本（DSH-Store「可验证」条款）。
+
+### 测试与发布
+
+- 新增测试：`test/search.test.mjs`、`test/keys.test.mjs`、`test/copy.test.mjs`、
+  `test/choose.test.mjs`（含 U+0130 漏检、非规范档位、Escape 分层、IME 兜底等回归）。
+- **mtime 新鲜度检查换成内容指纹**：旧检查在 `git clone` 后必然 FAIL（git 按路径
+  字典序写盘）、`touch` 又能绕过，且完全没覆盖真正被浏览器执行的 `lib/client.js`。
+  现在 `tsdown.config.ts` 注入源码 sha256，测试比对 bundle 里的指纹与现算值。
+- **座位遮蔽守卫改为值断言**：旧实现扫源码文本，一行注释即可绕过（实测）；现在读
+  导出常量 + 断言 bundle 里的 `priority: -1`，并定向检查官方座位的 `kind: 'single'`
+  / `scope: 'session'`（「single → chain」那一半此前从未被检查）。
+- 新增 `lib/` 产物跟踪门禁（build 出新文件忘 `git add` 会被 CI 拦下）、字典解析改
+  花括号配平、权限 deny-list 补 `sendBeacon`/`EventSource`/`Worker`/`indexedDB` 等。
+- **新增 CI**（`.github/workflows/ci.yml`）：push/PR 跑 install → typecheck → test →
+  build → `git diff --exit-code -- lib`（入库产物必须等于重建结果）。
+- **publish.yml 加前置校验**：typecheck/test/build + lib 一致性 + CHANGELOG 段落
+  存在性，发布成功后打 tag 并推送。
+
 ## [0.1.21] - 2026-09-16
 
 ### 变更
@@ -23,7 +114,9 @@
 
 ### 变更
 
-- **无运行时行为变更**：`lib/client.js` 与 `lib/types/*.d.ts` 逐字节未变，仅 source map 随注释再生。
+- **无 UI 行为变更**：`lib/client.js` 的 loader id 与 `<style data-plugin>` 值对齐包名
+  （`@bittersmilezzz/dsh-model-selector`，此前是短名 `dsh-model-selector`），source map 随
+  注释再生；用户可见行为不变。
 - **记录两处「官方原语不采纳」的判据**（与既有的「不用官方 `Menu`」并列，写进代码注释）：
   - 官方 `useAnchoredPosition` 的水平起点恒为 anchor 左缘、`side` 由调用方写死、返回 `fixed`
     坐标；本插件菜单默认右缘对齐 seat，且需按 trigger 上下空间自动选边，改用它等于同时改

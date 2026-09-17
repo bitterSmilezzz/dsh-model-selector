@@ -5,12 +5,18 @@
 * apply and removed again on unload. Class names are prefixed `dms-` so they
 * cannot collide with CSS-module hashes from other plugins. Colors come only
 * from `--dsw-*` theme tokens, matching the shipped Menu material.
+*
+* 显式 `: string` 注解：不加注解时 tsc 会把整份 CSS 推断成字面量类型并写进
+* lib/types/client/styles.d.ts（19KB 的 d.ts 只为声明一个常量），发布包里
+* 白白多出十几 KB 且每次改样式都全量重写。
 */
-export const CSS = `
+export const CSS: string = `
 .dms-root {
   position: relative;
   min-width: 0;
 }
+/* root 只作为焦点落点（tabIndex=-1）：不画焦点环，真正的可聚焦控件在它内部。 */
+.dms-root:focus { outline: none; }
 
 .dms-trigger {
   display: flex;
@@ -272,6 +278,8 @@ export const CSS = `
   font-size: 12px;
   line-height: 18px;
 }
+/* 常驻 live region（内容随状态更新）：空时收起，不占位。 */
+.dms-notice:empty { display: none; }
 .dms-effort {
   display: flex;
   align-items: center;
@@ -442,6 +450,8 @@ export const CSS = `
 }
 .dms-effort.is-busy { opacity: .72; }
 .dms-effort-error { flex: 1 0 100%; margin-top: 8px; padding: 6px 10px; border-radius: 8px; color: var(--dsw-alias-state-error-primary, #c83e4d); background: var(--dsw-alias-state-error-tertiary, rgba(220,55,70,.08)); font-size: 11px; line-height: 1.5; }
+/* 常驻容器（内容随状态更新）：空时收起，不占位。 */
+.dms-effort-error:empty { display: none; }
 /* 视觉隐藏工具类（SR 播报/错误原文：不占布局但可被读屏读到）。 */
 .dms-sr {
   position: absolute;
@@ -482,14 +492,21 @@ export const CSS = `
 }
 .dms-model-option-desc { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-tertiary, #9296a0); font-size: 10px; }
 .dms-model-check { color: var(--dsw-static-deepseek-500, #4d70ff); font-size: 15px; text-align: center; }
-/* 方向键导航把焦点落在选项上，此前没有任何焦点指示。 */
-.dms-model-option:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }
+/* 方向键导航把焦点落在选项上。选中态是「背景 + 加粗 + 勾号」，悬停是「背景」，
+   两者与焦点指示必须两两可辨 —— 只用同一个 hover 背景 token 会让「焦点落在
+   选中行上」完全不可见（roving 的默认落点恰恰优先选中行）。 */
+.dms-model-option:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
+}
 /* 当前选中行：仅靠勾号不足以在密集列表里定位。 */
 .dms-model-optionSelected { background: var(--dsw-alias-interactive-bg-hover); }
 .dms-model-optionSelected .dms-model-option-name { font-weight: 600; }
 /* select 进行中：官方以 disabled 变灰表达，这里用 aria-busy 驱动同样的视觉、
-   不夺键盘焦点（aria-disabled 保连续性，见 ModelOption）。 */
-.dms-menu[aria-busy="true"] .dms-model-option { color: var(--dsw-alias-label-dimmed); }
+   不夺键盘焦点（aria-disabled 保连续性，见 ModelOption）。aria-busy 挂在
+   role=menu/listbox 容器上（.dms-groups）—— 挂在外层 .dms-menu 会罩住
+   live region、压制其播报。 */
+.dms-groups[aria-busy="true"] .dms-model-option { color: var(--dsw-alias-label-dimmed); }
 /* 搜索结果里的供应商标是区分跨供应商同名模型的唯一线索，之前无任何样式。 */
 .dms-model-option-provider {
   display: block;

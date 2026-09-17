@@ -1,6 +1,6 @@
 {
   "name": "@bittersmilezzz/dsh-model-selector",
-  "version": "0.1.21",
+  "version": "0.2.0",
   "description": "DeepSeek Harness 的增强模型选择器：单层菜单（搜索 + 分组）+ 底部内联推理强度（Effort）滑杆。",
   "type": "module",
   "main": "lib/index.js",
@@ -18,7 +18,11 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
+    "lib/client.js",
+    "lib/client.js.map",
+    "lib/index.js",
+    "lib/index.js.map",
+    "lib/types",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -29,7 +33,8 @@
     "bundle": "tsdown",
     "watch": "tsdown --watch",
     "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "validate:registry": "node --test test/*.test.mjs"
   },
   "license": "MIT",
   "keywords": [

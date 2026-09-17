@@ -6,6 +6,20 @@
  * 其余行 tabindex=-1、仅方向键可达。本模块只负责一件事：给定当前渲染的
  * 行集合与选中行，算出 Tab 从搜索框进入列表时应停靠的默认行键。
  */
+/**
+ * 模型行键的**唯一构造点**：菜单 DOM 的 `data-row-key`、roving 决策与行焦点
+ * 回调必须同源。此前这三处各自拼模板串，一次局部改名就能让 dmsDefaultRowKey
+ * 返回的键匹配不到任何行（Tab 落点静默失效），且测试拿自制副本验证不到。
+ */
+export function dmsRowKey(providerId: string, modelId: string): string {
+  return `${providerId}\u0000${modelId}`
+}
+
+/** 组头行键（分组视图里组头也参与方向键导航）。 */
+export function dmsHeaderKey(providerId: string): string {
+  return `header:${providerId}`
+}
+
 export interface RovingRowSet {
   /** 搜索命中行键（渲染顺序）；null = 非搜索态（分组视图）。 */
   hitKeys: readonly string[] | null

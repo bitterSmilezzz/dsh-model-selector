@@ -26,6 +26,11 @@ export declare function dmsBelowMaxHeight(triggerBottom: number, viewportHeight:
  * 拖出屏外）时，返回钳到视口内的 left 值，调用方改用 left 锚定。
  * 返回 undefined 表示保持默认右锚定。
  * menuWidth 传菜单实际渲染宽度（offsetWidth），与 CSS `min(280px, 100vw-32px)` 解耦。
+ *
+ * **坐标系**：入参与返回值都是**视口坐标**。菜单是 .dms-root（position:
+ * relative）内的 absolute 元素，left 的参考系是 root 的 padding box —— 调用方
+ * 必须减去 root 的左缘再写进 style.left，否则窄窗口下菜单整体右移、横向溢出
+ * 时整幅画到屏外。
  */
 export declare function dmsMenuLeft(rootRight: number, menuWidth: number, viewportWidth: number, margin: number): number | undefined;
 //# sourceMappingURL=menuFit.d.ts.map

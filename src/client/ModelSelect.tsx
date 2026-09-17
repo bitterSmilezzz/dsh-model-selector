@@ -30,7 +30,7 @@ import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selec
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
-import { dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsShouldAdoptLateSuccess, dmsSliderLevels, maxEffortOf } from './effort.ts'
+import { dmsChoosePlan, dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsShouldAdoptLateSuccess, dmsSliderLevels } from './effort.ts'
 // 辐射画布（绘制纯函数 + 动画循环 hook）与指针拖动状态机：从 EffortSlider
 // 组件内拆分独立成模块，组件本体只保留档位/提交/渲染三件事。
 import { useEffortCanvas } from './effortCanvas.ts'
@@ -38,37 +38,27 @@ import { useEffortDrag } from './effortDrag.ts'
 // Menu direction/clamp helpers likewise (pure — the direction flip and the
 // below-clamp are user-visible and were previously only browser-testable).
 import { MENU_MAX_HEIGHT, MENU_VIEWPORT_MARGIN, dmsMenuAbove, dmsBelowMaxHeight, dmsMenuLeft } from './menuFit.ts'
-// roving tabindex 的默认落点决策（纯函数，node 可测——行键集合与选中行的
-// 组合分支不值得只在浏览器里验证）。
-import { dmsDefaultRowKey } from './roving.ts'
+// roving tabindex 的默认落点决策与行键构造（纯函数，node 可测——行键格式必须
+// 与渲染出的 data-row-key 同源，否则默认落点静默失效）。
+import { dmsDefaultRowKey, dmsHeaderKey, dmsRowKey } from './roving.ts'
+// 搜索（归一化/命中窗口/高亮区间/空态）与键盘状态机：分支密集的用户可见逻辑，
+// 全部抽成纯函数模块（node 可测），事件处理器只做 dispatch。
+import { dmsHaystack, dmsMenuEmptyState, dmsNormalizeQuery, dmsSearchHits } from './search.ts'
+import type { SearchChoice, SearchResult } from './search.ts'
+import { dmsMenuKeyAction, dmsNextRowIndex } from './keys.ts'
+import { dmsTriggerCopy } from './copy.ts'
 // Type-only: the model catalog carrier types (moved here in dsh alpha.2).
 import type { ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
 
 /** Per-session model directory snapshot (official state shape). */
 type DirectoryState = ModelDirectoryState
-/** The enhanced seat's injected business face. */
-/** 搜索索引条目：模型 + 其搜索 haystack + 选中载荷。 */
-type ModelChoice = {
-	group: ModelProviderGroup
-	model: ModelProviderGroup["models"][number]
-	haystack: string
-	selection: ModelSelection
-}
-
-/** 搜索命中的渲染条目：只装渲染窗口内的命中（窗口外只计数，见 hits memo）。 */
-type SearchHit = {
-	group: ModelProviderGroup
-	model: ModelProviderGroup["models"][number]
-	nameHit: { start: number; end: number } | null
-}
-
-/** 搜索命中结果：items 为窗口内条目（渲染用），total 为命中总数（播报/截断提示用）。 */
-type SearchResult = { items: SearchHit[]; total: number }
 
 interface EffortSliderProps {
   state: DirectoryState
   select: (selection: ModelSelection) => Promise<boolean>
   t: TranslateNS<'modelSelector'>
+  /** 提交失败（超时/拒绝）时回调：让菜单把错误条归到「加载失败」之外（见 renderErrorStrip）。 */
+  onSelectFailure: () => void
 }
 
 
@@ -97,7 +87,7 @@ const EFFORT_COMMIT_TIMEOUT_MS = 12e3;
 // 绘制与动画循环见 ./effortCanvas.ts（dmsDrawRadiation / useEffortCanvas），
 // 指针拖动状态机见 ./effortDrag.ts（useEffortDrag）；本组件只做档位状态、
 // 提交/回滚与渲染。
-export const EffortSlider = react.memo(function EffortSlider({ state, select, t }: EffortSliderProps) {
+export const EffortSlider = react.memo(function EffortSlider({ state, select, t, onSelectFailure }: EffortSliderProps) {
 	const levels = dmsSliderLevels(state);
 	// 惰性初始化到当前生效档：useState("")/0 会让菜单打开的第一帧档位名为空、
 	// 进度闪 0%，随后才被同步 effect 纠正（首帧即正确，无闪烁）。
@@ -105,6 +95,10 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 	const [preview, setPreview] = react.useState(() => dmsEffectiveEffortIndex(levels, state));
 	const [committing, setCommitting] = react.useState(false);
 	const [localError, setLocalError] = react.useState<string | null>(null);
+	// 最新 state 经 ref 读取：迟到 settle 的判定要看「此刻」的生效模型，而不是
+	// 提交发起时闭包里捕获的那份（见 dmsShouldAdoptLateSuccess 的 sameModel）。
+	const stateRef = react.useRef(state);
+	stateRef.current = state;
 	const canvasRef = react.useRef<HTMLCanvasElement | null>(null);
 	const inputRef = react.useRef<HTMLInputElement | null>(null);
 	const committedRef = react.useRef("");
@@ -138,7 +132,9 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 		setEffort(next);
 		setPreview(index);
 		setLocalError(null);
-	}, [available, levels.length, state.current?.provider, state.current?.model, state.current?.reasoningEffort]);
+		// levels 进依赖：同一模型、档位个数不变但档位 id 变了（适配器/目录刷新把
+		// high 换成 xhigh）时也要重同步，否则读数落到原始 id、preview 与新档位错位。
+	}, [available, levels, state.current?.provider, state.current?.model, state.current?.reasoningEffort]);
 	react.useEffect(() => {
 		previewRef.current = preview;
 		radiationRef.current.target = levels.length >= 2 ? preview / (levels.length - 1) : 0.5;
@@ -181,7 +177,17 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 		// levels 非空时 clamp 保证 index ∈ [0, count-1]，next 不可能为 undefined。
 		const index = dmsClampIndex(raw, levels.length);
 		const next = levels[index]?.id;
-		if (next === void 0 || next === committedRef.current) return;
+		if (next === void 0) return;
+		// 落回已提交的同一档（拖动归位、键盘重复按当前档）：不发多余 RPC，也不闪
+		// 本地 busy 灰——但必须把 preview 归一化回整档。raw 是未取整的分数（见
+		// dmsPointerRaw），不归一化会让旋钮/进度条/画布停在两档之间，而同步 effect
+		// 因依赖未变不会重跑纠正它（此前只有指针路径会留下这个残影）。
+		if (next === committedRef.current) {
+			previewRef.current = index;
+			setPreview(index);
+			setEffort(next);
+			return;
+		}
 		committingRef.current = true;
 		const previous = committedRef.current;
 		// 提交纪元：每次发起新提交单调递增。迟到采纳判据用它区分「无新提交」与
@@ -199,6 +205,9 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 		try {
 			const current = state.current;
 			if (current === null) throw new Error(t("empty.efforts"));
+			// 提交时的模型身份：迟到采纳必须确认生效模型仍是这一个 —— next/index 是在
+			// 这份档位表上算出来的，模型被外部改写后写回 UI 会显示一个后端并未生效的档位。
+			const modelKeyAtCommit = dmsRowKey(current.provider, current.model);
 			// 超时护栏：官方 select 无超时契约，把它包进带 12s 定时的 Promise——
 			// 超时即视为失败（回滚 + 播报），并释放 committing 锁。select 迟到的
 			// resolve 不直接丢弃：若它确认了新档位且自回滚以来没有新提交改写
@@ -226,7 +235,9 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 							// 操作链为准不覆盖（新提交失败回滚后 committedRef 值与
 							// 上一轮相同，纪元未推进才说明没有新提交）。
 							// 判定收敛到 dmsShouldAdoptLateSuccess（effort.ts，node 可测）。
-							if (accepted && mountedRef.current && dmsShouldAdoptLateSuccess(committedRef.current, previous, draggingRef.current, committingRef.current, commitEpochRef.current, epochAtCommit)) {
+							const latest = stateRef.current.current;
+							const sameModel = latest !== null && dmsRowKey(latest.provider, latest.model) === modelKeyAtCommit;
+							if (accepted && mountedRef.current && dmsShouldAdoptLateSuccess(committedRef.current, previous, draggingRef.current, committingRef.current, commitEpochRef.current, epochAtCommit, sameModel)) {
 								committedRef.current = next;
 								previewRef.current = index;
 								setEffort(next);
@@ -257,6 +268,9 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 				setPreview(index);
 			}
 		} catch (cause) {
+			// 通知菜单把错误归到「档位切换」而不是「目录加载」：否则 effort 提交失败
+			// 会点亮加载错误条 + 无用的「重新加载」按钮（见 renderErrorStrip）。
+			onSelectFailure();
 			const restore = Math.max(0, dmsEffortIndex(levels, previous));
 			committedRef.current = previous;
 			previewRef.current = restore;
@@ -269,7 +283,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 			committingRef.current = false;
 			if (mountedRef.current) setCommitting(false);
 		}
-	}, [levels, select, state, t]);
+	}, [levels, select, state, t, onSelectFailure]);
 	// 指针拖动状态机（pointer 生命周期 + window 兜底监听）在 effortDrag.ts；
 	// commit/rollback/showPointerPreview 作回调外接——hook 经 callbacksRef 持有
 	// 最新闭包，事件触发时取到当前渲染的函数。
@@ -352,8 +366,10 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t 
 			</div>
 			<span className="dms-effort-value">{effortName}</span>
 			{effortDesc === undefined ? null : <span className="dms-effort-desc">{effortDesc}</span>}
-			{error === null ? null : <span className="dms-sr" role="status">{error}</span>}
-			{error === null ? null : <div className="dms-effort-error">{error}</div>}
+			{/* 错误：视觉隐藏的 role=status 供读屏播报，可见错误块同文案。两处容器都
+			    常驻（空时 :empty 隐藏）—— 插入式 live region 的首次播报不可靠。 */}
+			<span className="dms-sr" role="status">{error ?? ''}</span>
+			<div className="dms-effort-error">{error ?? ''}</div>
 		</div>
 	);
 });
@@ -368,6 +384,8 @@ interface ModelOptionProps {
 	rowKey: string
 	/** roving tabindex：true = 当前活动行（唯一可 Tab 到的模型行，其余 -1）。 */
 	active: boolean
+	/** 搜索态（结果列表是 listbox）：行用 option + aria-selected；分组态用 menuitemradio。 */
+	searchMode: boolean
 	/** 行聚焦回调（箭头导航/点击/程序化 focus 都经它同步活动行键）。 */
 	onRowFocus: (key: string) => void
 	/** 搜索命中且命中落在名称内时的片段区间（高亮）；undefined/null = 不标。 */
@@ -384,7 +402,7 @@ interface ModelOptionProps {
  * 但 100 条命中里绝大多数命中区间不变——按值比较 start/end，值相同即跳过
  * 重渲染，搜索才不卡顿。
  */
-const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, active, onRowFocus, nameHit, t, onChoose }: ModelOptionProps) {
+const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, active, searchMode, onRowFocus, nameHit, t, onChoose }: ModelOptionProps) {
 	const hit = nameHit === undefined || nameHit === null || nameHit.start === nameHit.end
 		? null
 		: [
@@ -395,8 +413,12 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 	return (
 		<button
 			type="button"
-			role="menuitemradio"
-			aria-checked={selected}
+			// 搜索态的结果容器是 listbox（搜索框是 combobox，见 .dms-searchInput），
+			// 行必须用 option + aria-selected；分组态是 ARIA menu，行用 menuitemradio
+			// + aria-checked。两套语义不能混用（menuitemradio 在 listbox 里无效）。
+			role={searchMode ? "option" : "menuitemradio"}
+			aria-checked={searchMode ? undefined : selected}
+			aria-selected={searchMode ? selected : undefined}
 			data-row-key={rowKey}
 			tabIndex={active ? 0 : -1}
 			className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
@@ -430,6 +452,7 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 	if (prev.busy !== next.busy) return false;
 	if (prev.rowKey !== next.rowKey) return false;
 	if (prev.active !== next.active) return false;
+	if (prev.searchMode !== next.searchMode) return false;
 	if (prev.onRowFocus !== next.onRowFocus) return false;
 	if (prev.t !== next.t) return false;
 	if (prev.onChoose !== next.onChoose) return false;
@@ -472,6 +495,16 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		toastSeqRef.current += 1;
 		setToast({ seq: toastSeqRef.current, text, failed });
 	}, []);
+	// 稳定引用：这两个回调作为 props 传给 EffortSlider / Toast。内联箭头会让
+	// 子组件的 effect 依赖每次渲染都变（Toast 的卸载定时器被重启、滑杆 memo 失效）。
+	// markSelectFailure 把错误来源标成「切换」：否则 effort 提交失败会点亮
+	// 菜单里的「目录加载失败」条 + 无用的「重新加载」按钮（见 renderErrorStrip）。
+	const markSelectFailure = react.useCallback((): void => {
+		lastActionRef.current = "select";
+	}, []);
+	const dismissToast = react.useCallback((): void => {
+		setToast(null);
+	}, []);
 	const lastActionRef = react.useRef<"load" | "select">("load");
 	const rootRef = react.useRef<HTMLDivElement | null>(null);
 	const triggerRef = react.useRef<HTMLButtonElement | null>(null);
@@ -481,11 +514,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	// 模型目录稳定时，haystack 索引不随 select/状态抖动重建：仅在 groups 引用
 	// 真正变化（新 load 结果）时重建 400+ 条搜索索引。useMemo 保证 group 引用
 	// 未变时 choices 引用稳定，currentChoice/hits 的 useMemo 依赖它也不会抖动。
-	const choices = react.useMemo<readonly ModelChoice[]>(
+	const choices = react.useMemo<readonly SearchChoice[]>(
 		() => state.groups.flatMap((group) => group.models.map((model) => ({
 			group,
 			model,
-			haystack: `${model.name}\n${model.description ?? ""}\n${group.name}\n${model.id}\n${group.id}`.toLowerCase(),
+			haystack: dmsHaystack(group, model),
 			selection: {
 				provider: group.id,
 				model: model.id,
@@ -503,34 +536,30 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
 	const effortLabel = reasoning === void 0 ? void 0 : effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
 	const busy = state.status === "selecting";
-	const normalized = query.trim().toLowerCase();
-	const hits = react.useMemo<SearchResult | null>(() => {
-		if (normalized === "") return null;
-		const items: SearchHit[] = [];
-		let total = 0;
-		for (const choice of choices) {
-			if (!choice.haystack.includes(normalized)) continue;
-			total += 1;
-			// 渲染窗口已满：只计数不构造对象——宽泛关键词（单字母）命中数百条时，
-			// 每次击键省掉数百次 `{group, model, nameHit}` 分配；nameHit 的 indexOf
-			// 也只在窗口内做（高亮只消费窗口内条目）。总数单独累计，播报与
-			// 「仅显示前 N 条」提示仍然准确。
-			if (items.length >= MAX_VISIBLE_HITS) continue;
-			let nameHit: { start: number; end: number } | null = null;
-			const at = choice.model.name.toLowerCase().indexOf(normalized);
-			if (at >= 0) nameHit = { start: at, end: at + normalized.length };
-			items.push({ group: choice.group, model: choice.model, nameHit });
-		}
-		return { items, total };
-	}, [choices, normalized]);
+	// choose 的最新输入面经 ref 读取：choose 因此不随 busy/current/choices/open 抖动
+	// —— 它作为行 props 传进 ModelOption，引用一变数百行的自定义 memo 就全线失效。
+	const chooseInputRef = react.useRef({ busy, current: state.current, choices, open });
+	chooseInputRef.current = { busy, current: state.current, choices, open };
+	const normalized = dmsNormalizeQuery(query);
+	// 归一化可能改变码位长度（见 dmsFold），因此匹配与高亮全部走 search.ts 的
+	// 纯函数：haystack 已折叠、高亮只在长度不变时给区间，不再用小写串下标切原串。
+	const hits = react.useMemo<SearchResult | null>(
+		() => dmsSearchHits(choices, normalized, MAX_VISIBLE_HITS),
+		[choices, normalized],
+	);
 	// roving tabindex 的默认落点（Tab 从搜索框进列表的停靠行）：选中行优先、
-	// 其次首个可见模型行、全折叠时回退首个组头。纯决策在 roving.ts（node 可测）。
+	// 其次首个可见模型行、全折叠时回退首个组头。纯决策在 roving.ts（node 可测），
+	// 行键构造同样来自那里 —— 渲染出的 data-row-key 与这里的键必须同源。
+	const visibleModelKeys = react.useMemo(
+		() => state.groups.flatMap((g) => (collapsed.has(g.id) ? [] : g.models.map((m) => dmsRowKey(g.id, m.id)))),
+		[state.groups, collapsed],
+	);
 	const defaultRowKey = react.useMemo(() => dmsDefaultRowKey({
-		hitKeys: hits === null ? null : hits.items.map((h) => `${h.group.id}\u0000${h.model.id}`),
-		modelKeys: state.groups.flatMap((g) => (collapsed.has(g.id) ? [] : g.models.map((m) => `${g.id}\u0000${m.id}`))),
-		headerKeys: state.groups.map((g) => `header:${g.id}`),
-		selectedKey: state.current === null ? null : `${state.current.provider}\u0000${state.current.model}`,
-	}), [hits, state.groups, collapsed, state.current]);
+		hitKeys: hits === null ? null : hits.items.map((h) => dmsRowKey(h.group.id, h.model.id)),
+		modelKeys: visibleModelKeys,
+		headerKeys: state.groups.map((g) => dmsHeaderKey(g.id)),
+		selectedKey: state.current === null ? null : dmsRowKey(state.current.provider, state.current.model),
+	}), [hits, visibleModelKeys, state.groups, state.current]);
 	// 行集合/选中变化时把 tabindex=0 的默认行同步到当前渲染集；菜单关闭清空。
 	// 焦点已在行上（onRowFocus 改写过 activeRowKey）时，只要默认落点没变本
 	// effect 不重跑，活动行保持用户最后聚焦的那行。
@@ -597,8 +626,15 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			// back on itself; clamp against the space below the trigger instead.
 			setBelowMaxHeight(dmsBelowMaxHeight(rect.bottom, window.innerHeight, MENU_MAX_HEIGHT));
 			// 水平：菜单实际渲染宽度为准（offsetWidth），右锚定放不下时钳到视口内。
+			// dmsMenuLeft 的入参/返回值都是**视口坐标**，而 .dms-menu 是 .dms-root
+			// （position: relative）内的 absolute 元素 —— left 的参考系是 root 的
+			// padding box。不减去 root 左缘的话，钳位一旦生效菜单整体右移
+			// rootRect.left；横向溢出（rect.right > innerWidth）那一支更会把整幅
+			// 菜单画到屏外，恰是这次钳位要避免的现象。
 			const menuWidth = menuRef.current?.offsetWidth ?? 0;
-			setMenuLeft(dmsMenuLeft(rect.right, menuWidth, window.innerWidth, MENU_VIEWPORT_MARGIN));
+			const left = dmsMenuLeft(rect.right, menuWidth, window.innerWidth, MENU_VIEWPORT_MARGIN);
+			const rootLeft = rootRef.current?.getBoundingClientRect().left ?? 0;
+			setMenuLeft(left === undefined ? undefined : left - rootLeft);
 		};
 		measure();
 		let raf = 0;
@@ -695,13 +731,21 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		setOpen(true);
 		if (state.status === "error" || state.groups.length === 0 || Date.now() - lastLoadRef.current > DIRECTORY_STALE_MS) reload();
 	}, [state.status, state.groups.length, reload]);
+	// 还焦：优先 trigger；trigger 被 locked 禁用时 focus() 是空操作（焦点会掉回
+	// body，下一次 Tab 从文档开头重来），退到 root 容器（tabIndex=-1）承接。
+	const focusTrigger = (): void => {
+		const trigger = triggerRef.current;
+		if (trigger !== null && !trigger.disabled) {
+			trigger.focus();
+			return;
+		}
+		rootRef.current?.focus();
+	};
 	const close = react.useCallback((restoreFocus = false) => {
 		setOpen(false);
 		setNotice(null);
 		setQuery("");
-		if (restoreFocus) queueMicrotask(() => {
-			triggerRef.current?.focus();
-		});
+		if (restoreFocus) queueMicrotask(focusTrigger);
 	}, []);
 	// 外部 pointerdown 关闭与 Escape 一致走 close(true)：搜索框随菜单卸载后
 	// 焦点落回 trigger（此前焦点直接掉 body）。hook 只以 false 调用 setter，
@@ -711,29 +755,32 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	}, [close]);
 	useDismissOnOutsidePointer(rootRef, open, dismissOnOutsidePointer);
 	// locked 翻转（会话移除/失活/页面 inert 等）时若菜单还开着直接关闭：
-	// trigger 已禁用，挂着的菜单没有可交互入口；close() 顺带清掉搜索词与
-	// notice。close 引用稳定（[] deps），effect 只在 locked/open 变化时重跑。
+	// trigger 已禁用，挂着的菜单没有可交互入口；close(true) 顺带清掉搜索词与
+	// notice，并把焦点从即将卸载的菜单里接出来（focusTrigger 因 trigger disabled
+	// 落到 root 容器，不让焦点掉回 body）。
 	react.useEffect(() => {
-		if (locked && open) close();
+		if (locked && open) close(true);
 	}, [locked, open, close]);
 	const choose = react.useCallback((selection: ModelSelection): void => {
-		if (busy) return;
-		if (state.current?.provider === selection.provider && state.current.model === selection.model) {
+		const { busy: isBusy, current, choices: catalog } = chooseInputRef.current;
+		if (isBusy) return;
+		if (current?.provider === selection.provider && current.model === selection.model) {
 			setNotice(t("notice.already"));
 			return;
 		}
-		const target = choices.find((c) => c.selection.provider === selection.provider && c.selection.model === selection.model);
-		const max = target?.model.reasoning === void 0 ? void 0 : maxEffortOf(target.model.reasoning);
-		const effort = max === "off" ? void 0 : max;
-		const full = {
+		const target = catalog.find((c) => c.selection.provider === selection.provider && c.selection.model === selection.model);
+		// 自动拉档决策收敛到 dmsChoosePlan（effort.ts，node 可测）：非规范档位 id
+		// 不再被当成「最强档」提交（那会挑错档、甚至被宿主拒绝）。
+		const plan = dmsChoosePlan(target?.model.reasoning);
+		const full: ModelSelection = {
 			provider: selection.provider,
 			model: selection.model,
-			...effort === void 0 ? {} : { reasoningEffort: effort }
+			...plan.effort === void 0 ? {} : { reasoningEffort: plan.effort }
 		};
 		lastActionRef.current = "select";
-		// 自动拉档只有「高于模型自己声明的默认档」时才算替用户做了决定，此时播报落点。
-		const autoRaised = effort !== void 0 && effort !== target?.model.reasoning?.defaultEffort;
-		const autoName = target?.model.reasoning?.efforts.find((level) => level.id === effort)?.name ?? effort ?? "";
+		const autoName = plan.effort === void 0
+			? ""
+			: target?.model.reasoning?.efforts.find((level) => level.id === plan.effort)?.name ?? plan.effort;
 		// 超时护栏与 EffortSlider.commit() 同款：目录 select 无超时契约，RPC 永久
 		// 挂起时若不加护栏，status='selecting' 由 store 持有、本插件无法复位，交互
 		// 永久锁死。超时/拒绝都按切换失败播报 Toast（复用既有文案，不新增 key）；
@@ -768,17 +815,23 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
 					return;
 				}
-				if (rootRef.current !== null) {
-					close(true);
-					if (autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
-				}
+				// 只有菜单仍开着时才关（并清搜索词、还焦）：用户在 RPC 在途期间已经
+				// 关掉菜单/移走焦点时，这里的 close(true) 会把焦点从用户当前所在
+				// 控件抢回 trigger，还会清掉用户刚输入的搜索词。Toast 与 open 无关，
+				// 照常播报。
+				if (chooseInputRef.current.open) close(true);
+				if (plan.autoRaised) showToast(t("toast.effortAuto", { effort: autoName }), false);
 			} catch {
 				// 超时 / select 拒绝：都按切换失败播报（防御性 catch 同时杜绝
 				// unhandled rejection——未来注入面变更也不会让它漏出去）。
 				showToast(t("notice.selectFailed"));
 			}
 		})();
-	}, [busy, state.current, choices, select, t, directory, close, showToast]);
+		// 依赖只剩稳定引用（注入面的 select/t、目录 store、close/showToast 都是
+		// useCallback([]) 或 props 缓存）：busy/current/choices/open 一律经
+		// chooseInputRef 读最新值 —— 否则一次模型切换就让 choose 换引用，数百行的
+		// ModelOption 自定义 memo 全线失效。
+	}, [select, t, directory, close, showToast]);
 	const toggleCollapse = react.useCallback((groupId: string): void => {
 		setCollapsed((prev) => {
 			const next = new Set(prev);
@@ -789,17 +842,15 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	}, []);
 	if (!available) return null;
 	// 键盘导航：按 DOM 顺序查询菜单内全部行（data-row-key），不再依赖渲染期
-	// 收集的 ref 数组（那既阻止行级 memo，又把副作用塞进 render）。
+	// 收集的 ref 数组（那既阻止行级 memo，又把副作用塞进 render）。环绕下标
+	// 收敛到 dmsNextRowIndex（keys.ts，node 可测）。
 	const moveFocus = (offset: number): void => {
 		const menu = menuRef.current;
 		if (menu === null) return;
 		const items = [...menu.querySelectorAll<HTMLButtonElement>('[data-row-key]')];
 		if (items.length === 0) return;
 		const active = items.findIndex((item) => item === document.activeElement);
-		// 焦点不在任何行上（在搜索框等菜单内控件）时：向下从首行进、向上从末行进（环绕）；
-		// 已在某行上时按 offset 循环。
-		const start = active < 0 ? (offset > 0 ? -1 : 0) : active;
-		items[(start + offset + items.length) % items.length]?.focus();
+		items[dmsNextRowIndex(active, offset, items.length)]?.focus();
 	};
 	// Home/End 跳首/末行（WAI-ARIA menu 标准键；搜索框内不劫持——那是移光标键）。
 	const focusEdge = (last: boolean): void => {
@@ -807,82 +858,91 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		if (items === undefined || items.length === 0) return;
 		(last ? items[items.length - 1] : items[0])?.focus();
 	};
+	// 按键 → 动作的判定全部收敛在 dmsMenuKeyAction（keys.ts，node 可测）；
+	// 这里只做 dispatch 与副作用（preventDefault 只在真的执行动作时才发，
+	// 无行可去时不吞键）。
 	const onRootKeyDown = (event: react.KeyboardEvent<HTMLDivElement>): void => {
-		// IME 组合输入期间不劫持按键：Enter 是候选上屏确认、方向键在候选窗翻页、
-		// Escape 是取消组合——此时关菜单/选首个命中/移焦点都是抢用户的输入。
-		if (event.nativeEvent.isComposing) return;
 		const target = event.target;
-		if (event.key === "Escape" && open) {
-			// Escape 分层：查询非空且焦点在菜单内时，第一按只清词（搜索框内清词
-			// 焦点留在原处；列表内清词会让命中行卸载，焦点还回搜索框，避免掉
-			// body），再按一次才关菜单。IME 组合输入在函数入口已被 isComposing
-			// 挡掉，这里不需要重复守卫。
-			if (query !== "" && rootRef.current?.contains(document.activeElement) === true) {
-				const fromSearch = target instanceof HTMLInputElement && target === searchRef.current;
+		const action = dmsMenuKeyAction({
+			key: event.key,
+			// IME 组合输入期间不劫持按键：Enter 是候选上屏确认、方向键在候选窗翻页、
+			// Escape 是取消组合。除 isComposing 外还要认 keyCode 229 —— WebKit 在
+			// compositionend 之后补发的那次 Enter 带 isComposing === false，不挡就会把
+			// 「候选上屏」当成「选中首个命中」直接切模型。
+			composing: event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229,
+			open,
+			fromSearch: target instanceof HTMLInputElement && target === searchRef.current,
+			// 「菜单内」= 菜单容器（搜索框/行/滑杆）；trigger 不算 —— 焦点在 trigger 上
+			// 按 Escape 应当直接关菜单，而不是被清词逻辑拽进搜索框。
+			inMenu: menuRef.current?.contains(document.activeElement) === true,
+			onNonInput: !(target instanceof HTMLInputElement),
+			hasQuery: query !== "",
+			rowCount: menuRef.current?.querySelectorAll('[data-row-key]').length ?? 0,
+			hitCount: hits?.items.length ?? 0,
+		});
+		switch (action.type) {
+			case 'none':
+				return;
+			case 'clearQuery':
+				event.preventDefault();
 				setNotice(null);
 				setQuery("");
-				if (!fromSearch) searchRef.current?.focus();
+				if (action.focusSearch) searchRef.current?.focus();
 				return;
-			}
-			event.preventDefault();
-			close(true);
-			return;
-		}
-		if (!open) return;
-		const fromSearch = target instanceof HTMLInputElement && target === searchRef.current;
-		if ((event.key === "ArrowDown" || event.key === "ArrowUp") && (!(target instanceof HTMLInputElement) || fromSearch)) {
-			// 搜索框自动聚焦后箭头原本只在输入框内移光标（键盘导航死路）；现在
-			// 搜索框内方向键也进入结果列表（effort 滑杆的 range input 不受影响）。
-			event.preventDefault();
-			moveFocus(event.key === "ArrowDown" ? 1 : -1);
-			return;
-		}
-		if ((event.key === "Home" || event.key === "End") && !(target instanceof HTMLInputElement)) {
-			event.preventDefault();
-			focusEdge(event.key === "End");
-			return;
-		}
-		// 只有搜索框内的 Enter 才选中第一个命中：焦点落在 effort 滑杆（range
-		// input）等其它控件时，Enter 不应把用户的选择抢走。
-		if (event.key === "Enter" && fromSearch) {
-			if (hits !== null && hits.items.length > 0) {
+			case 'close':
 				event.preventDefault();
-				const first = hits.items[0]!;
+				close(true);
+				return;
+			case 'moveFocus':
+				event.preventDefault();
+				moveFocus(action.offset);
+				return;
+			case 'focusEdge':
+				event.preventDefault();
+				focusEdge(action.last);
+				return;
+			case 'chooseFirstHit': {
+				const first = hits?.items[0];
+				if (first === undefined) return;
+				event.preventDefault();
 				choose({ provider: first.group.id, model: first.model.id });
+				return;
 			}
 		}
 	};
 	const onBlur = (event: react.FocusEvent<HTMLDivElement>): void => {
-		if (busy) return;
 		const related = event.relatedTarget;
+		// 焦点仍在 root 内（菜单、搜索框、滑杆、root 自身）：不关。
+		if (related instanceof Node && rootRef.current?.contains(related) === true) return;
+		// 焦点落到 root 外的可聚焦元素（Tab 出去）：关。不再豁免 busy —— 否则在途
+		// 选择期间会留下「焦点已在菜单外、Escape 也关不掉」的悬挂菜单（keydown
+		// 不再冒泡到 root），而菜单外的点击本就有 outside-pointer 路径兜底。
 		if (related instanceof Node) {
-			if (rootRef.current?.contains(related)) return;
 			close();
 			return;
 		}
-		// relatedTarget 为 null（窗口失焦 alt-tab / 焦点落到不可聚焦区域）也收起菜单。
-		close();
+		// relatedTarget 为 null：只有窗口失焦（alt-tab）才关。点击菜单内的非可聚焦
+		// 区域（内边距、标签、分组间隙）也会让浏览器把焦点收回 body，但那是菜单内
+		// 操作，不该关菜单。
+		if (!document.hasFocus()) close();
 	};
-	// 标签兜底对齐官方：目录成员资格只是参考（routable 契约），current 匹配不到
-	// group 不代表没有选择——此时显示 provider/model 原始 id，而不是「选择模型」。
-	const waiting = state.current === null && state.status === "loading";
-	const modelLabel = currentChoice?.model.name
-		?? (waiting
-			? t("trigger.loading")
-			: state.current === null ? t("trigger.fallback") : `${state.current.provider}/${state.current.model}`);
-	const providerLabel = currentChoice?.group.name;
-	const triggerLabel = effortLabel === void 0 ? modelLabel : `${modelLabel} · ${effortLabel}`;
-	const triggerTitle = providerLabel === void 0 ? triggerLabel : `${providerLabel} · ${triggerLabel}`;
-	const triggerAria = waiting ? t("trigger.loading") : currentChoice === void 0 ? (state.current === null ? t("trigger.selectAria") : t("trigger.aria", { model: `${state.current.provider}/${state.current.model}` })) : effortLabel === void 0 ? t("trigger.aria", { model: providerLabel === void 0 ? modelLabel : `${providerLabel} ${modelLabel}` }) : t("trigger.ariaEffort", {
-		model: providerLabel === void 0 ? modelLabel : `${providerLabel} ${modelLabel}`,
-		effort: effortLabel
-	});
+	// 标签兜底链收敛到 dmsTriggerCopy（copy.ts，node 可测）：目录成员资格只是
+	// 参考（routable 契约），current 匹配不到 group 时显示 provider/model 原始
+	// id，而不是「选择模型」。
+	const trigger = dmsTriggerCopy({
+		current: state.current,
+		modelName: currentChoice?.model.name,
+		providerName: currentChoice?.group.name,
+		effortLabel,
+		waiting: state.current === null && state.status === "loading",
+	}, t);
 	const renderErrorStrip = () => {
 		// Load failures only: a rejected select is announced by the Toast, which
-		// also survives closing the menu (see choose()).
+		// also survives closing the menu (see choose()). role=alert：菜单打开时
+		// 焦点在搜索框，失败条插在它上方，读屏用户不浏览过去就不知道有失败。
 		if (state.error !== null && lastActionRef.current === "load") {
 			return (
-				<div className="dms-error">
+				<div className="dms-error" role="alert">
 					<span>{t("error.action", { message: state.error })}</span>
 					<button type="button" className="dms-retry" onClick={reload}>{t("action.reload")}</button>
 				</div>
@@ -896,27 +956,35 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			<button type="button" className="dms-retry" onClick={reload}>{t("action.reload")}</button>
 		</div>
 	));
-	// 列表区的两个空态：空态播报节点必须放在 role=menu 容器外（menu 内容模型
-	// 只允许菜单节点），视觉位置由 .dms-groupsFill 的弹性占位补回（与 .dms-groups
-	// 同款 flex 布局），空态时列表容器本身不渲染。
-	const noHits = hits !== null && hits.items.length === 0;
-	const noModels = hits === null && state.status === 'ready' && choices.length === 0;
+	// 列表区的空态：判定收敛到 dmsMenuEmptyState（search.ts，node 可测）—— 无模型
+	// 优先于无命中（目录为空时不该引导用户去改关键词）。空态播报节点必须放在
+	// role=menu 容器外（menu 内容模型只允许菜单节点），视觉位置由 .dms-groupsFill
+	// 的弹性占位补回，空态时列表容器本身不渲染。
+	const emptyState = dmsMenuEmptyState({
+		status: state.status,
+		choiceCount: choices.length,
+		searching: hits !== null,
+		hitCount: hits?.total ?? 0,
+	});
 	return (
-		<div ref={rootRef} className="dms-root" onKeyDown={onRootKeyDown} onBlur={onBlur}>
+		// tabIndex=-1：root 只作为「焦点落点」承接（locked 关闭菜单时 trigger 已
+		// 禁用，不能让焦点掉回 body；点击菜单内非可聚焦区域时浏览器把焦点交给它，
+		// onBlur 便不会误判成「焦点离开菜单」）。不进 Tab 序。
+		<div ref={rootRef} className="dms-root" tabIndex={-1} onKeyDown={onRootKeyDown} onBlur={onBlur}>
 			<button
 				ref={triggerRef}
 				type="button"
 				className="dms-trigger"
-				aria-label={triggerAria}
+				aria-label={trigger.aria}
 				aria-haspopup="menu"
 				aria-expanded={open}
 				aria-controls={open ? `${id}-menu` : undefined}
-				title={triggerTitle}
+				title={trigger.title}
 				disabled={locked}
 				onClick={() => (open ? close() : show())}
 			>
-				<span className="dms-triggerLabel">{modelLabel}</span>
-				{providerLabel !== undefined && <span className="dms-triggerProvider">{providerLabel}</span>}
+				<span className="dms-triggerLabel">{trigger.modelLabel}</span>
+				{trigger.providerLabel !== undefined && <span className="dms-triggerProvider">{trigger.providerLabel}</span>}
 				{effortLabel !== undefined && <span className="dms-triggerEffort">{effortLabel}</span>}
 				<span className={`dms-chevron${open ? " dms-chevronOpen" : ""}`} aria-hidden="true">
 					{IconChevronDown}
@@ -931,11 +999,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 						...(menuLeft === undefined ? null : { left: menuLeft, right: "auto" }),
 					}}
 					className={'dms-menu dms-menuModel' + (menuAbove ? '' : ' dms-menuBelow')}
-					aria-busy={state.status === 'loading' || busy}
 				>
-					{state.status === 'loading' && <div className="dms-status">{t('status.loading')}</div>}
+					{state.status === 'loading' && <div className="dms-status" role="status">{t('status.loading')}</div>}
 					{renderErrorStrip()}
-					{state.failures.length > 0 && <div className="dms-failures">{renderFailures(state.failures)}</div>}
+					{/* role=alert 挂容器：一次 load 可能多家供应商同时失败，逐条 alert
+					    会连播数遍。 */}
+					{state.failures.length > 0 && <div className="dms-failures" role="alert">{renderFailures(state.failures)}</div>}
 					<div className="dms-search">
 						<input
 							ref={searchRef}
@@ -944,7 +1013,16 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							value={query}
 							placeholder={t('search.placeholder')}
 							aria-label={t('search.placeholder')}
-							aria-controls={`${id}-groups`}
+							// 输入即过滤一个结果列表 → combobox 语义（APG「Editable
+							// Combobox With List Autocomplete」）。aria-expanded 只在搜索态
+							// 为 true：那时结果容器才是 listbox；非搜索态的分组视图是 menu，
+							// 不冒充「展开的建议列表」。
+							role="combobox"
+							aria-expanded={hits !== null}
+							aria-autocomplete="list"
+							// 空态时结果容器不渲染，指向它就是悬空 IDREF（官方 trigger
+							// 同款处理：关闭/不存在时省略 aria-controls）。
+							aria-controls={emptyState === null ? `${id}-groups` : undefined}
 							autoComplete="off"
 							enterKeyHint="search"
 							spellCheck={false}
@@ -968,26 +1046,39 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							</button>
 						)}
 					</div>
-					{/* 搜索结果的屏幕阅读器播报：命中总数变化时由 role=status 播报，
-					    视觉隐藏（.dms-sr）；放在 role=menu 容器外，不污染菜单内容模型。 */}
-					{hits !== null && (
-						<span className="dms-sr" role="status">{t('search.status', { count: String(hits.total) })}</span>
-					)}
-					{/* 空态（无命中/无模型）与「仅显示前 N 条」note 全部在 role=menu
-					    容器外：menu 的直接内容模型只允许 menuitem/group 等菜单节点，
-					    live region 会被菜单导航跳过、静态说明不该冒充菜单项。视觉
-					    位置由 .dms-groupsFill（空态）与容器后的 .dms-more 保持。 */}
-					{noHits && (
+					{/* 搜索结果播报：容器常驻（内容随状态更新）—— 插入式 live region 在各
+					    AT 上行为不一致，可能整条漏播。0 命中时不播计数（空态文案已承担），
+					    避免同帧两条 role=status 重复播报。 */}
+					<span className="dms-sr" role="status">
+						{hits !== null && hits.total > 0 ? t('search.status', { count: String(hits.total) }) : ''}
+					</span>
+					{/* 推理标记的说明：只挂在 title 上则键盘/读屏用户拿不到，这里补一条
+					    视觉隐藏的静态说明（role=note，不冒充菜单项）。 */}
+					<span className="dms-sr" role="note">{t('badge.reasoningHint')}</span>
+					{/* 空态（无命中/无模型）与「仅显示前 N 条」note 全部在结果容器外：
+					    menu/listbox 的直接内容模型只允许菜单/选项节点，live region 会被
+					    菜单导航跳过、静态说明不该冒充选项。视觉位置由 .dms-groupsFill
+					    （空态）与容器后的 .dms-more 保持。 */}
+					{emptyState === 'noHits' && (
 						<div className="dms-empty dms-groupsFill" role="status">{t('search.noMatch', { query: query.trim() })}</div>
 					)}
-					{noModels && (
+					{emptyState === 'noModels' && (
 						<div className="dms-empty dms-groupsFill" role="status">{t('empty.models')}</div>
 					)}
-					{!noHits && !noModels && (
-					<div className="dms-groups" id={`${id}-groups`} role="menu" aria-label={t("menu.aria")}>
+					{emptyState === null && (
+					<div
+						className="dms-groups"
+						id={`${id}-groups`}
+						// 搜索态是 listbox（combobox 的弹层，行用 option）；分组态是 menu
+						// （行用 menuitemradio）。aria-busy 从 .dms-menu 移到这里：它罩住
+						// live region 会压制播报，而 menu 容器自身才是「内容仍在变」的子树。
+						role={hits !== null ? 'listbox' : 'menu'}
+						aria-busy={state.status === 'loading' || busy}
+						aria-label={t("menu.aria")}
+					>
 						{hits !== null
 							? hits.items.map((hit) => {
-								const rowKey = `${hit.group.id}\u0000${hit.model.id}`;
+								const rowKey = dmsRowKey(hit.group.id, hit.model.id);
 								return (
 									<ModelOption
 										key={rowKey}
@@ -998,6 +1089,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 										busy={busy}
 										rowKey={rowKey}
 										active={rowKey === activeRowKey}
+										searchMode
 										onRowFocus={onRowFocus}
 										nameHit={hit.nameHit}
 										t={t}
@@ -1007,21 +1099,25 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							})
 							: state.groups.map((group) => {
 								const headingId = `${id}-${group.id}`;
+								const headerKey = dmsHeaderKey(group.id);
 								const isCollapsed = collapsed.has(group.id);
 								return (
 									<section key={group.id} data-group-id={group.id} role="group" aria-labelledby={headingId} className="dms-group">
-										{/* 组头参与 roving 方向键导航（data-row-key）但不进 Tab 序
-										    （tabIndex=-1）：折叠/展开对键盘可达，数百行却不会
-										    撑爆 Tab 停靠点。role=menuitem + aria-expanded 是
-										    ARIA menu 模式里「可展开菜单项」的规范语义。 */}
+										{/* 组头参与 roving 导航（data-row-key + onFocus 同步活动行键）：
+										    折叠/展开对键盘可达，且「全部折叠」时 dmsDefaultRowKey
+										    回退到的正是组头 —— 它必须能承接 tabIndex=0，否则
+										    Tab 会直接跳过整个列表（活动行键落空）。非活动组头
+										    仍是 -1，数百行不会撑爆 Tab 停靠点。role=menuitem +
+										    aria-expanded 是 ARIA menu 模式里「可展开菜单项」的语义。 */}
 <button
 											type="button"
 											role="menuitem"
-											data-row-key={`header:${group.id}`}
-											tabIndex={-1}
+											data-row-key={headerKey}
+											tabIndex={activeRowKey === headerKey ? 0 : -1}
 											className="dms-groupHeader"
 											aria-expanded={!isCollapsed}
 											aria-label={t('group.toggleAria', { name: group.name, count: String(group.models.length) })}
+											onFocus={() => onRowFocus(headerKey)}
 											onClick={() => toggleCollapse(group.id)}
 										>
 											<span className={`dms-groupChevron${isCollapsed ? ' dms-groupChevronClosed' : ''}`} aria-hidden="true">
@@ -1031,7 +1127,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 											<span className="dms-groupCount">{group.models.length}</span>
 										</button>
 										{!isCollapsed && group.models.map((model) => {
-											const rowKey = `${group.id}\u0000${model.id}`;
+											const rowKey = dmsRowKey(group.id, model.id);
 											return (
 												<ModelOption
 													key={rowKey}
@@ -1042,6 +1138,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 													busy={busy}
 													rowKey={rowKey}
 													active={rowKey === activeRowKey}
+													searchMode={false}
 													onRowFocus={onRowFocus}
 													t={t}
 													onChoose={choose}
@@ -1060,10 +1157,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					{state.current !== null && dmsSliderLevels(state).length >= 2 && (
 						<div className="dms-effortFooter">
 							<span className="dms-effortFooterLabel">{t('menu.effort')}</span>
-							<EffortSlider state={state} select={select} t={t} />
+							<EffortSlider state={state} select={select} t={t} onSelectFailure={markSelectFailure} />
 						</div>
 					)}
-					{notice !== null && <div className="dms-notice" role="status">{notice}</div>}
+					{/* notice 容器常驻（空时 :empty 隐藏）：插入式 live region 的首次播报
+					    在各 AT 上不可靠，「已是当前模型」这类反馈只有这一条通道。 */}
+					<div className="dms-notice" role="status">{notice ?? ''}</div>
 				</div>
 			) : null}
 			{toast !== null && (
@@ -1072,7 +1171,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					text={toast.text}
 					icon={toast.failed ? <IconWarningOutline16 /> : undefined}
 					anchor={rootRef.current?.closest<HTMLElement>("[data-composer-card]") ?? null}
-					onDone={() => { setToast(null); }}
+					onDone={dismissToast}
 				/>
 			)}
 		</div>
