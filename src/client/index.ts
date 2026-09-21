@@ -90,17 +90,11 @@ export function apply(ctx: ClientContext): void {
           load: () => {
             if (available) directory.load().catch((error: unknown) => { console.warn('[dsh-model-selector] directory.load failed:', error) })
           },
-          // 保留 boolean 契约（调用方按 false 走 notice），但把真实拒绝原因留在控制台，
-          // 否则用户只看到「切换失败」、线上无从定位。
+          // alpha.2 契约：直接透传 directory.select 的 RemoteResult（失败详情随 error
+          // 回给调用方播报），不可选时 Promise.resolve(undefined)（与官方注册同款）。
           select: (selection) => available
-            ? directory.select(selection).then(
-              () => true,
-              (error: unknown) => {
-                console.warn('[dsh-model-selector] select failed:', error)
-                return false
-              },
-            )
-            : Promise.resolve(false),
+            ? directory.select(selection)
+            : Promise.resolve(undefined),
         }
       },
     }, ModelSelect))

@@ -26,7 +26,7 @@ import { Toast, IconWarningOutline16, IconChevronDownOutline14, IconCheckOutline
 export { zhDict, enDict }
 // Type-only: official model-selection directory types (the enhanced seat's
 // data contract — same shared per-session directory the /model popup reads).
-import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
@@ -53,9 +53,12 @@ import type { ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-se
 /** Per-session model directory snapshot (official state shape). */
 type DirectoryState = ModelDirectoryState
 
+/** 官方座位注入面的 select 结果（alpha.2 契约：RemoteResult，或 undefined = 该会话不可选）。 */
+type SelectResult = Awaited<ReturnType<ModelSelectInjected['select']>>
+
 interface EffortSliderProps {
   state: DirectoryState
-  select: (selection: ModelSelection) => Promise<boolean>
+  select: ModelSelectInjected['select']
   t: TranslateNS<'modelSelector'>
   /** 提交失败（超时/拒绝）时回调：让菜单把错误条归到「加载失败」之外（见 renderErrorStrip）。 */
   onSelectFailure: () => void
@@ -214,7 +217,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 			// committedRef（回滚态仍对应本次提交链），把 UI/committedRef 同步回
 			// 实际已生效的档位；迟到的 reject 保持回滚态。timer 在 select 先完成
 			// 时清除，不泄漏空转定时器。
-			const ok = await new Promise<boolean>((resolve, reject) => {
+			const result = await new Promise<SelectResult>((resolve, reject) => {
 				let settled = false;
 				const timer = window.setTimeout(() => {
 					if (settled) return;
@@ -226,7 +229,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 				// clearTimeout，不再依赖 Promise 闭包把定时器活到 select 迟到 settle。
 				commitTimerRef.current = timer;
 				select({ provider: current.provider, model: current.model, reasoningEffort: next }).then(
-					(accepted) => {
+					(result) => {
 						if (settled) {
 							// 迟到成功且实际生效：committedRef 还是回滚前的 previous
 							// 且提交纪元未推进（期间没有新的提交/拖动改写它），说明
@@ -237,7 +240,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 							// 判定收敛到 dmsShouldAdoptLateSuccess（effort.ts，node 可测）。
 							const latest = stateRef.current.current;
 							const sameModel = latest !== null && dmsRowKey(latest.provider, latest.model) === modelKeyAtCommit;
-							if (accepted && mountedRef.current && dmsShouldAdoptLateSuccess(committedRef.current, previous, draggingRef.current, committingRef.current, commitEpochRef.current, epochAtCommit, sameModel)) {
+							if (result?.ok === true && mountedRef.current && dmsShouldAdoptLateSuccess(committedRef.current, previous, draggingRef.current, committingRef.current, commitEpochRef.current, epochAtCommit, sameModel)) {
 								committedRef.current = next;
 								previewRef.current = index;
 								setEffort(next);
@@ -249,7 +252,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 						settled = true;
 						window.clearTimeout(timer);
 						commitTimerRef.current = null;
-						resolve(accepted);
+						resolve(result);
 					},
 					(cause: unknown) => {
 						if (settled) return;
@@ -260,7 +263,10 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 					},
 				);
 			});
-			if (!ok) throw new Error(t("effort.failed"));
+			if (result === undefined || !result.ok) {
+				if (result !== undefined) console.warn('[dsh-model-selector] effort select failed:', result.error);
+				throw new Error(t("effort.failed"));
+			}
 			if (mountedRef.current) {
 				committedRef.current = next;
 				previewRef.current = index;
@@ -468,7 +474,7 @@ interface ModelSelectProps {
   available: boolean
   directory: SnapshotStore<ModelDirectoryState>
   load: () => void
-  select: (selection: ModelSelection) => Promise<boolean>
+  select: ModelSelectInjected['select']
   t: TranslateNS<'modelSelector'>
 }
 export function ModelSelect({ locked, available, directory, load, select, t }: ModelSelectProps) {
@@ -788,7 +794,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		// 迟到的 settle 一律忽略：成功与否都会经共享目录写回，UI 无需再动作。
 		void (async () => {
 			try {
-				const accepted = await new Promise<boolean>((resolve, reject) => {
+				const result = await new Promise<SelectResult>((resolve, reject) => {
 					let settled = false;
 					const timer = window.setTimeout(() => {
 						if (settled) return;
@@ -796,11 +802,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 						reject(new Error(t("notice.selectFailed")));
 					}, EFFORT_COMMIT_TIMEOUT_MS);
 					select(full).then(
-						(ok) => {
+						(settledResult) => {
 							if (settled) return;
 							settled = true;
 							window.clearTimeout(timer);
-							resolve(ok);
+							resolve(settledResult);
 						},
 						(cause: unknown) => {
 							if (settled) return;
@@ -810,8 +816,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 						},
 					);
 				});
-				if (!accepted) {
-					const message = directory.getSnapshot().error;
+				if (result === undefined || !result.ok) {
+					// alpha.2 契约：失败详情随 RemoteResult.error 回来；契约缺席
+					// （undefined = 该会话不可选）时回退目录快照的错误（旧行为）。
+					const message = result !== undefined
+						? `${result.error.code}: ${result.error.message}`
+						: directory.getSnapshot().error;
 					showToast(message !== null ? t("error.action", { message }) : t("notice.selectFailed"));
 					return;
 				}

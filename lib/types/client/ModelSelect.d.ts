@@ -16,15 +16,14 @@
 import * as react from 'react';
 import { zh as zhDict, en as enDict } from './locales.ts';
 export { zhDict, enDict };
-import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client';
+import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store';
-import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types';
 /** Per-session model directory snapshot (official state shape). */
 type DirectoryState = ModelDirectoryState;
 interface EffortSliderProps {
     state: DirectoryState;
-    select: (selection: ModelSelection) => Promise<boolean>;
+    select: ModelSelectInjected['select'];
     t: TranslateNS<'modelSelector'>;
     /** 提交失败（超时/拒绝）时回调：让菜单把错误条归到「加载失败」之外（见 renderErrorStrip）。 */
     onSelectFailure: () => void;
@@ -35,7 +34,7 @@ interface ModelSelectProps {
     available: boolean;
     directory: SnapshotStore<ModelDirectoryState>;
     load: () => void;
-    select: (selection: ModelSelection) => Promise<boolean>;
+    select: ModelSelectInjected['select'];
     t: TranslateNS<'modelSelector'>;
 }
 export declare function ModelSelect({ locked, available, directory, load, select, t }: ModelSelectProps): react.JSX.Element | null;
