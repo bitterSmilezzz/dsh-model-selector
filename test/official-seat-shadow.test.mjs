@@ -17,8 +17,13 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { MENU_VIEWPORT_MARGIN } from '../src/client/menuFit.ts'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const OFFICIAL_PRIMITIVES = join(
+  root,
+  'node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js',
+)
 const OFFICIAL_CLIENT = join(
   root,
   'node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js',
@@ -131,5 +136,33 @@ test('官方 ui-conversation 仍把 conversation.input.model 声明为 single/se
     declaration,
     /scope:\s*'session'/,
     `${SEAT} 不再是 session 作用域：本插件按 sessionId 构造注入面的前提变了`,
+  )
+})
+
+/**
+ * 视口边距的**依赖侧**钉子：本菜单的 MENU_VIEWPORT_MARGIN 对齐官方
+ * `useAnchoredMaxHeight` 里未导出的 `MARGIN`（primitives/lib/index.js）。
+ * 这条断言把「边距一致」从源码注释声称变成可执行判据：官方哪天改 MARGIN，
+ * 本菜单与官方 Menu 的贴边距离就会漂移（一边 12px 一边 N px），视觉不一致。
+ * 变红时：同步 menuFit.ts 的 MENU_VIEWPORT_MARGIN，并复核 menu-fit.test.mjs。
+ */
+test('视口边距: MENU_VIEWPORT_MARGIN 与官方 useAnchoredMaxHeight 的 MARGIN 一致', () => {
+  assert.ok(
+    existsSync(OFFICIAL_PRIMITIVES),
+    `找不到官方 primitives 产物 ${OFFICIAL_PRIMITIVES}：先按 dsh-plugins 契约安装依赖`,
+  )
+  const bundle = readFileSync(OFFICIAL_PRIMITIVES, 'utf8')
+  // MARGIN 声明紧贴在 useAnchoredMaxHeight 上方（两者同在
+  // lib/types/useAnchoredMaxHeight.js region），向后 1200px 只能看到函数体。
+  // 从函数名往前取 600px 覆盖声明区，避免命中别的 region 里的同名常量。
+  const regionAt = bundle.indexOf('function useAnchoredMaxHeight')
+  assert.notEqual(regionAt, -1, '官方 primitives 里找不到 useAnchoredMaxHeight：边距判据需重新取证')
+  const region = bundle.slice(Math.max(0, regionAt - 600), regionAt)
+  const matched = /const\s+MARGIN\s*=\s*(\d+)/.exec(region)
+  assert.ok(matched !== null, '官方 useAnchoredMaxHeight 的 MARGIN 常量形状变了：需重新取证')
+  assert.equal(
+    MENU_VIEWPORT_MARGIN,
+    Number(matched[1]),
+    `官方 MARGIN 已变为 ${matched[1]}：同步 menuFit.ts 的 MENU_VIEWPORT_MARGIN`,
   )
 })

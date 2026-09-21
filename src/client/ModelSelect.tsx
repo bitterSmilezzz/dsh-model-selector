@@ -274,20 +274,30 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 				setPreview(index);
 			}
 		} catch (cause) {
-			// 通知菜单把错误归到「档位切换」而不是「目录加载」：否则 effort 提交失败
-			// 会点亮加载错误条 + 无用的「重新加载」按钮（见 renderErrorStrip）。
-			onSelectFailure();
-			const restore = Math.max(0, dmsEffortIndex(levels, previous));
-			committedRef.current = previous;
-			previewRef.current = restore;
-			if (mountedRef.current) {
-				setEffort(previous);
-				setPreview(restore);
-				setLocalError(cause instanceof Error ? cause.message : String(cause));
+			// 迟到超时/失败不得回滚新意图链：提交 B 快速成功后，提交 A 的 12s 定时器
+			// 才到点 reject——此时 committedRef 已是 B 的结果，若按 A 的 previous
+			// 回滚就会把用户已成功的 B 覆盖掉（dmsShouldAdoptLateSuccess 只保护
+			// 「迟到成功」路径，回滚路径必须自己查纪元闸）。
+			if (commitEpochRef.current === epochAtCommit) {
+				// 通知菜单把错误归到「档位切换」而不是「目录加载」：否则 effort 提交失败
+				// 会点亮加载错误条 + 无用的「重新加载」按钮（见 renderErrorStrip）。
+				onSelectFailure();
+				const restore = Math.max(0, dmsEffortIndex(levels, previous));
+				committedRef.current = previous;
+				previewRef.current = restore;
+				if (mountedRef.current) {
+					setEffort(previous);
+					setPreview(restore);
+					setLocalError(cause instanceof Error ? cause.message : String(cause));
+				}
 			}
 		} finally {
-			committingRef.current = false;
-			if (mountedRef.current) setCommitting(false);
+			// 同上：迟到 settled 的 finally 不得释放新提交的 committing 锁（否则
+			// 新提交仍在途，UI 已显示可操作，连点可发起第三条提交）。
+			if (commitEpochRef.current === epochAtCommit) {
+				committingRef.current = false;
+				if (mountedRef.current) setCommitting(false);
+			}
 		}
 	}, [levels, select, state, t, onSelectFailure]);
 	// 指针拖动状态机（pointer 生命周期 + window 兜底监听）在 effortDrag.ts；
@@ -396,6 +406,10 @@ interface ModelOptionProps {
 	onRowFocus: (key: string) => void
 	/** 搜索命中且命中落在名称内时的片段区间（高亮）；undefined/null = 不标。 */
 	nameHit?: { start: number; end: number } | null
+	/** 搜索态的集合规模（总命中数）与该行 1-based 序号：截断到 MAX_VISIBLE_HITS
+	 *  时 AT 需要知道「这是 N 条中的第几条」。分组态不传（menu 无 setsize 语义）。 */
+	setsize?: number | undefined
+	posinset?: number | undefined
 	t: TranslateNS<'modelSelector'>
 	onChoose: (selection: ModelSelection) => void
 }
@@ -408,7 +422,7 @@ interface ModelOptionProps {
  * 但 100 条命中里绝大多数命中区间不变——按值比较 start/end，值相同即跳过
  * 重渲染，搜索才不卡顿。
  */
-const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, active, searchMode, onRowFocus, nameHit, t, onChoose }: ModelOptionProps) {
+const ModelOption = react.memo(function ModelOption({ group, model, showProvider, selected, busy, rowKey, active, searchMode, onRowFocus, nameHit, setsize, posinset, t, onChoose }: ModelOptionProps) {
 	const hit = nameHit === undefined || nameHit === null || nameHit.start === nameHit.end
 		? null
 		: [
@@ -425,6 +439,14 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 			role={searchMode ? "option" : "menuitemradio"}
 			aria-checked={searchMode ? undefined : selected}
 			aria-selected={searchMode ? selected : undefined}
+			// 搜索态给行一个 id：combobox 的 aria-activedescendant 与「这是 N 条中的
+			// 第几条」播报都要求 option 可被引用。rowKey 内含 '\u0000' 分隔符
+			// （dmsRowKey），作 HTML id 合法但不可读，编码成可读形式。
+			id={searchMode ? `dms-opt-${encodeURIComponent(rowKey)}` : undefined}
+			// 结果被截断到 MAX_VISIBLE_HITS 时，AT 需要知道集合规模与本行位置，
+			// 否则用户无法感知「只显示了前 100 条」。分组态是 ARIA menu，无 setsize 语义。
+			aria-setsize={searchMode && setsize !== undefined && setsize > posinset! ? setsize : undefined}
+			aria-posinset={searchMode && posinset !== undefined ? posinset : undefined}
 			data-row-key={rowKey}
 			tabIndex={active ? 0 : -1}
 			className={`dms-model-option${selected ? " dms-model-optionSelected" : ""}`}
@@ -462,6 +484,9 @@ const ModelOption = react.memo(function ModelOption({ group, model, showProvider
 	if (prev.onRowFocus !== next.onRowFocus) return false;
 	if (prev.t !== next.t) return false;
 	if (prev.onChoose !== next.onChoose) return false;
+	// 截断规模/序号：搜索词变化引起 total 或排序变化时必须重渲染。
+	if (prev.setsize !== next.setsize) return false;
+	if (prev.posinset !== next.posinset) return false;
 	// 引用相同（含都是 null/undefined）即视为未变化；否则按值比较命中区间。
 	if (prev.nameHit === next.nameHit) return true;
 	if (prev.nameHit === null || prev.nameHit === void 0) return false;
@@ -1027,8 +1052,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 							// Combobox With List Autocomplete」）。aria-expanded 只在搜索态
 							// 为 true：那时结果容器才是 listbox；非搜索态的分组视图是 menu，
 							// 不冒充「展开的建议列表」。
+							// 0 命中时同步收起：listbox 容器不渲染（见下），声称「已展开」
+							// 会让读尸用户听到一个指向空集的 combo（空态文案由 role=status
+							// 那条 live region 承担播报，不依赖 expanded）。
 							role="combobox"
-							aria-expanded={hits !== null}
+							aria-expanded={hits !== null && hits.total > 0}
 							aria-autocomplete="list"
 							// 空态时结果容器不渲染，指向它就是悬空 IDREF（官方 trigger
 							// 同款处理：关闭/不存在时省略 aria-controls）。
@@ -1087,7 +1115,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 						aria-label={t("menu.aria")}
 					>
 						{hits !== null
-							? hits.items.map((hit) => {
+							? hits.items.map((hit, index) => {
 								const rowKey = dmsRowKey(hit.group.id, hit.model.id);
 								return (
 									<ModelOption
@@ -1102,6 +1130,8 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 										searchMode
 										onRowFocus={onRowFocus}
 										nameHit={hit.nameHit}
+										setsize={hits.total}
+										posinset={index + 1}
 										t={t}
 										onChoose={choose}
 									/>

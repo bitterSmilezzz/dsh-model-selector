@@ -111,9 +111,20 @@ export const CSS: string = `
   animation-name: dms-menu-in-below;
 }
 
+/* 菜单头部的「非列表」栏（loading / 空态 / 错误条 / 失败条 / 截断提示）：
+   一律允许收缩（flex-shrink 1）且各自限高，让 .dms-groups 始终保住可滚动
+   的最小可视高度。2026-09-21 修复的 P0：向上弹时 useAnchoredMaxHeight 会把
+   maxHeight 钳到「trigger 底缘 - 12px」（底缘固定、向上生长的语义），trigger
+   靠近视口顶部时该值很小；原先这些栏是 flex: 0 0 auto 完全不收缩，头部
+   40-100px 全部占完后 .dms-groups 的可视高度趋近 0，而 .dms-menu 是
+   overflow:hidden —— 用户看到错误条却看不到也滚不到任何模型行。
+   现在给它们统一的上限（相对菜单高度）+ overflow，最坏情况是栏内自己滚动。 */
 .dms-status,
 .dms-empty {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40%;
+  overflow-y: auto;
   padding: 10px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 13px;
@@ -121,7 +132,10 @@ export const CSS: string = `
 }
 
 .dms-more {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 20%;
+  overflow-y: auto;
   padding: 8px 12px;
   border-top: 1px solid var(--dsw-alias-border-l1, transparent);
   color: var(--dsw-alias-label-tertiary);
@@ -132,15 +146,18 @@ export const CSS: string = `
 /* Provider-load failure strip: capped and scrollable so a long list of failed
    groups can never squeeze the model list out of the menu (E4). */
 .dms-failures {
-  flex: 0 0 auto;
-  max-height: 96px;
+  flex: 0 1 auto;
+  max-height: min(96px, 30%);
   min-height: 0;
   overflow-y: auto;
 }
 
 .dms-error,
 .dms-warning {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40%;
+  overflow-y: auto;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -215,7 +232,10 @@ export const CSS: string = `
 /* 图标组件只收 size/className，装饰性 aria-hidden 只能包一层 span；contents 让它不占布局。 */
 .dms-icon-slot { display: contents; }
 
-.dms-groups { flex: 1 1 auto; min-height: 0; overflow-y: auto; contain: content; }
+/* 列表区：菜单里唯一的弹性主体。max-height 被 useAnchoredMaxHeight 钳得很小
+   （trigger 靠近视口顶 + 向上弹）时，32px 保底让「至少见到一行模型」始终成立
+   —— 头部各栏此时按自己的 max-height 百分比上限收缩（见 .dms-status 等）。 */
+.dms-groups { flex: 1 1 auto; min-height: 32px; overflow-y: auto; contain: content; }
 /* 空态占位：空态播报节点在 role=menu 容器外，用与 .dms-groups 同款弹性布局
    补回列表区本来的位置（不挤压其余栏，消息也不会贴到菜单顶部）。 */
 .dms-groupsFill { flex: 1 1 auto; min-height: 0; overflow-y: auto; contain: content; }

@@ -6,6 +6,39 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [未发布]
+
+### 修复
+
+- **修复向上弹菜单时模型列表被头部栏挤出可视区（P0）**：`useAnchoredMaxHeight` 的语义是
+  「浮层底缘固定、向上生长，只钳顶缘」，trigger 靠近视口顶部时 `maxHeight` 被钳得很小；
+  而 `.dms-status` / `.dms-error` / `.dms-failures` / `.dms-more` 全是 `flex: 0 0 auto`
+  不参与收缩，头部 40-100px 占完后 `.dms-groups` 可视高度趋近 0，且 `.dms-menu` 是
+  `overflow:hidden`——用户看到错误条却看不到也滚不到任何模型行。现在这些栏改为
+  可收缩 + 相对高度上限（`flex: 0 1 auto` + `max-height: 40%/30%/20%` + 自身滚动），
+  `.dms-groups` 保留 32px 保底，最坏情况是栏内自己滚动。
+- **修复迟到超时回滚覆盖新提交**：快速连拖滑杆时，提交 A 的 12s 超时定时器晚于提交 B
+  的成功才 reject，回滚路径没有纪元闸，会把用户已成功的 B 覆盖回 A 提交前的档位。
+  现在 catch 与 finally 都先查 `commitEpochRef.current === epochAtCommit`
+  （迟到 settled 属于旧意图链，不得回滚新链、也不得释放新提交的 committing 锁）。
+
+### 变更
+
+- 适配 DSH 0.1.6-alpha.2：`select` 契约从 `Promise<boolean>` 改为透传官方
+  `RemoteResult<void> | undefined`，失败播报改用 `error.code/message`；不可选会话
+  （undefined = subagent 会话）显式区分，不再当失败处理。
+
+### 无障碍
+
+- 搜索 0 命中时 `aria-expanded` 同步收起（原先声称已展开却指向不渲染的 listbox）。
+- 搜索结果行补 `id` / `aria-setsize` / `aria-posinset`：截断到 100 条时 AT 能播报
+  「这是 N 条中的第几条」，Memo 比较器同步纳入这两个 prop。
+
+### 工程
+
+- 新增依赖侧钉子：`MENU_VIEWPORT_MARGIN` 必须等于官方 `useAnchoredMaxHeight` 里
+  未导出的 `MARGIN`（原先只在注释里声称一致）。
+
 ## [0.2.0] - 2026-09-17
 
 多视角审查（React 正确性 / 无障碍 / 测试与发布链路）后的集中修复与加固。
