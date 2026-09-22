@@ -10,6 +10,15 @@
 
 ### 修复
 
+- **菜单关闭判据改用 `visibilityState`**：原先用 `!document.hasFocus()` 判「窗口
+  失焦」，在 iframe / 多文档场景（桌面端 WebView 承载、页面被嵌进别的文档）下，
+  用户点击 iframe 外的区域时该值为 false，会把「焦点只是被外层文档拿走」误判成
+  窗口失焦 → 菜单静默关掉。`hidden` 只在文档真正不可见（切标签页 / 最小化 /
+  锁屏）时为真，与「用户不在看这个页面」的语义一致。
+
+
+### 修复
+
 - **修复向上弹菜单时模型列表被头部栏挤出可视区（P0）**：`useAnchoredMaxHeight` 的语义是
   「浮层底缘固定、向上生长，只钳顶缘」，trigger 靠近视口顶部时 `maxHeight` 被钳得很小；
   而 `.dms-status` / `.dms-error` / `.dms-failures` / `.dms-more` 全是 `flex: 0 0 auto`

@@ -956,10 +956,15 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			close();
 			return;
 		}
-		// relatedTarget 为 null：只有窗口失焦（alt-tab）才关。点击菜单内的非可聚焦
-		// 区域（内边距、标签、分组间隙）也会让浏览器把焦点收回 body，但那是菜单内
+		// relatedTarget 为 null：只有窗口失焦（alt-tab / 切到别的应用）才关。点击菜单内的
+		// 非可聚焦区域（内边距、标签、分组间隙）也会让浏览器把焦点收回 body，但那是菜单内
 		// 操作，不该关菜单。
-		if (!document.hasFocus()) close();
+		// ⚠ 判据用 `visibilityState` 而不是 `document.hasFocus()`：后者在 iframe /
+		// 多文档场景（桌面端 WebView 承载、或页面被嵌进别的文档）下，用户点击
+		// iframe 外的区域时返回 false，会把「焦点只是被外层文档拿走」误判成窗口
+		// 失焦 → 菜单静默关掉。`hidden` 只在文档真正不可见（切标签页 / 最小化 /
+		// 锁屏）时为真，与「用户不在看这个页面」的语义一致。
+		if (document.visibilityState === 'hidden') close();
 	};
 	// 标签兜底链收敛到 dmsTriggerCopy（copy.ts，node 可测）：目录成员资格只是
 	// 参考（routable 契约），current 匹配不到 group 时显示 provider/model 原始
