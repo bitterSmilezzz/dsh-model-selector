@@ -8,6 +8,18 @@
 
 ## [未发布]
 
+### 工程
+
+- **适配 DSH 0.1.7-rc.1 的官方图标批量改名**（源头 `4937343a5e`）：
+  `IconWarningOutline16` / `IconChevronDownOutline14` / `IconCheckOutline14` /
+  `IconCloseFill14` → 对应的 `…Regular`，旧名在上游已全部移除。
+  四处图标都**显式传 `size={14}`**：实测这四个旧名 artwork 的默认 size 本来就是 14
+  （命名与实现不一致是上游自身的坑），而新版 `Regular` 默认 `size=16`，
+  不传会把 Toast 图标和菜单内的勾/叉视觉放大 2px。
+- 依赖对齐：`@deepseek-ai/*` 全部 devDependencies 与 peerDependencies 抬到
+  `^0.1.7-rc.1`；`useAnchoredMaxHeight` 新增第 4 个可选参 `margin`（默认 `MARGIN=12`，
+  向后兼容，本菜单的 `MENU_VIEWPORT_MARGIN` 无需改）。
+
 ### 修复
 
 - **菜单关闭判据改用 `visibilityState`**：原先用 `!document.hasFocus()` 判「窗口

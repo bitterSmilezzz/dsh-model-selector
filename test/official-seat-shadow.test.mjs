@@ -153,11 +153,12 @@ test('视口边距: MENU_VIEWPORT_MARGIN 与官方 useAnchoredMaxHeight 的 MARG
   )
   const bundle = readFileSync(OFFICIAL_PRIMITIVES, 'utf8')
   // MARGIN 声明紧贴在 useAnchoredMaxHeight 上方（两者同在
-  // lib/types/useAnchoredMaxHeight.js region），向后 1200px 只能看到函数体。
-  // 从函数名往前取 600px 覆盖声明区，避免命中别的 region 里的同名常量。
+  // lib/types/useAnchoredMaxHeight.js region）。
+  // 从函数名往前取 900px 覆盖声明区，避免命中别的 region 里的同名常量
+  // （0.1.7-rc.1 起该 bundle 的 region 间距变成 642 字符，600px 窗口已不够）。
   const regionAt = bundle.indexOf('function useAnchoredMaxHeight')
   assert.notEqual(regionAt, -1, '官方 primitives 里找不到 useAnchoredMaxHeight：边距判据需重新取证')
-  const region = bundle.slice(Math.max(0, regionAt - 600), regionAt)
+  const region = bundle.slice(Math.max(0, regionAt - 900), regionAt)
   const matched = /const\s+MARGIN\s*=\s*(\d+)/.exec(region)
   assert.ok(matched !== null, '官方 useAnchoredMaxHeight 的 MARGIN 常量形状变了：需重新取证')
   assert.equal(

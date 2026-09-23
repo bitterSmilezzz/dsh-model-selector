@@ -21,7 +21,7 @@ import { zh as zhDict, en as enDict } from './locales.ts'
 // the open menu. The list itself stays hand-rolled — primitives' Menu renders
 // every entry (footer included) as a <button role="menuitem">, which cannot
 // host the effort range input or the search field.
-import { Toast, IconWarningOutline16, IconChevronDownOutline14, IconCheckOutline14, IconCloseFill14, useAnchoredMaxHeight, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Toast, IconWarningOutlineRegular, IconChevronDownOutlineRegular, IconCheckOutlineRegular, IconCloseFillRegular, useAnchoredMaxHeight, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export { zhDict, enDict }
 // Type-only: official model-selection directory types (the enhanced seat's
@@ -67,9 +67,9 @@ interface EffortSliderProps {
 
 // 图标直接用 primitives 的组件（此前本仓自带一份逐字节相同的 SVG 副本）；
 // 图标组件只接受 size/className，aria-hidden 由调用处的包装元素承载。
-const IconChevronDown = <IconChevronDownOutline14 />;
-const IconCheck = <IconCheckOutline14 />;
-const IconClear = <IconCloseFill14 />;
+const IconChevronDown = <IconChevronDownOutlineRegular size={14} />;
+const IconCheck = <IconCheckOutlineRegular size={14} />;
+const IconClear = <IconCloseFillRegular size={14} />;
 /**
 * How long a successfully loaded directory snapshot is trusted before the
 * menu re-fetches it over RPC. The snapshot lives in the per-session store,
@@ -1214,7 +1214,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				<Toast
 					key={toast.seq}
 					text={toast.text}
-					icon={toast.failed ? <IconWarningOutline16 /> : undefined}
+					icon={toast.failed ? <IconWarningOutlineRegular size={14} /> : undefined}
 					anchor={rootRef.current?.closest<HTMLElement>("[data-composer-card]") ?? null}
 					onDone={dismissToast}
 				/>
