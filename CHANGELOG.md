@@ -6,6 +6,17 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.3.6] - 2026-09-25
+
+### 测试
+
+- 新增 `test/deps-double-listing.test.mjs`（3 条）：把「`@deepseek-ai/*` 依赖必须
+  peer+dev 双列」「两侧版本范围一致（cordis / schemastery 按宽松策略豁免）」
+  「src/test 零引用的 peer 必须标 optional」三条判据钉住。Code Review 发现 dsh-notify
+  有一项零引用 peer 漏标 optional，而本仓与 asr-voice 都没有这条守卫，等于同一把尺子
+  三仓只量了一仓。现三仓齐平（asr-voice v0.4.4 首发该守卫），防止口径再次分裂。
+  无运行时行为变化、无 `lib/` 产物变化。
+
 ## [0.3.5] - 2026-09-25
 
 ### 修复
