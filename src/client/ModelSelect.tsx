@@ -628,7 +628,10 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	// menuRef，effect 因 ref 身份变化重跑并立即 fit——翻向后的钳位是新鲜测量
 	// （原实现 signal 不变不重跑，翻回时用的还是向下弹期间留下的旧值）。
 	const inactiveMenuRef = react.useRef<HTMLDivElement | null>(null);
-	const menuMaxHeight = useAnchoredMaxHeight(menuAbove ? menuRef : inactiveMenuRef, MENU_MAX_HEIGHT, open);
+	// 第 4 参 margin 显式传本插件的 MENU_VIEWPORT_MARGIN，不依赖官方默认值恰好也是
+	// 12：上游改默认 MARGIN 时隐式依赖会让本菜单的贴边距离静默跟随漂移。
+	// official-seat-shadow.test.mjs 反向钉住两边相等（官方改了会红，届时再决策）。
+	const menuMaxHeight = useAnchoredMaxHeight(menuAbove ? menuRef : inactiveMenuRef, MENU_MAX_HEIGHT, open, MENU_VIEWPORT_MARGIN);
 	const [belowMaxHeight, setBelowMaxHeight] = react.useState(MENU_MAX_HEIGHT);
 	// 为何不采纳官方 useAnchoredPosition（与文件头「不用官方 Menu」并列的第二个不采纳决定）：
 	// 该 hook 的水平起点固定是 anchor 左缘（left = rect.left，仅越界时钳进视口），没有

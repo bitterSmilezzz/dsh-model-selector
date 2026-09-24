@@ -6,6 +6,24 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.3.1] - 2026-09-24
+
+### 修复
+
+- **`useAnchoredMaxHeight` 的 margin 依赖改为显式**：此前不传第 4 参，靠官方默认
+  `MARGIN = 12` 恰好与本插件的 `MENU_VIEWPORT_MARGIN` 相等。这是隐式巧合——上游一旦改
+  默认值，本菜单与官方 Menu 的贴边距离会一边 12px 一边 N px 地静默漂移，菜单自身毫无
+  察觉。现显式传 `MENU_VIEWPORT_MARGIN`，由
+  `test/official-seat-shadow.test.mjs` 反向钉住「两边仍相等」（官方改了会红，届时再决定
+  跟随还是显式分叉）。
+
+### 工程
+
+- `official-seat-shadow.test.mjs` 的 MARGIN 定位改为「函数名之前最后一个 `const MARGIN`
+  声明」，替掉原先的固定 900px 字符窗口：窗口是对第三方 bundle 排版（import 数量、注释
+  长短）的脆弱耦合，上游任何无关重排都会让测试红，而报错信息会误导成「成本契约变了」。
+  新增一条「margin 依赖是显式的」钉子（反证过：去掉第 4 参即红）。
+
 ## [0.3.0] - 2026-09-23
 
 ### 工程
@@ -250,6 +268,7 @@
 
 - 卸载守卫（组件卸载后不再更新状态）、passive scroll 节流、分组头补 `aria` 语义。
 
-[未发布]: https://github.com/bitterSmilezzz/dsh-model-selector/compare/v0.1.17...HEAD
+[0.3.1]: https://github.com/bitterSmilezzz/dsh-model-selector/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/bitterSmilezzz/dsh-model-selector/compare/v0.1.17...v0.3.0
 [0.1.17]: https://github.com/bitterSmilezzz/dsh-model-selector/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/bitterSmilezzz/dsh-model-selector/releases/tag/v0.1.16

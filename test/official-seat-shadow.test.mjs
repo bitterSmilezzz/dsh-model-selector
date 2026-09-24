@@ -154,16 +154,39 @@ test('视口边距: MENU_VIEWPORT_MARGIN 与官方 useAnchoredMaxHeight 的 MARG
   const bundle = readFileSync(OFFICIAL_PRIMITIVES, 'utf8')
   // MARGIN 声明紧贴在 useAnchoredMaxHeight 上方（两者同在
   // lib/types/useAnchoredMaxHeight.js region）。
-  // 从函数名往前取 900px 覆盖声明区，避免命中别的 region 里的同名常量
-  // （0.1.7-rc.1 起该 bundle 的 region 间距变成 642 字符，600px 窗口已不够）。
+  //
+  // 定位方式刻意**不用固定字符窗口**：窗口是对第三方 bundle 排版（import 数量、注释
+  // 长短）的脆弱耦合——上游任何一次无关重排都会让窗口不够 → 测试红，而报错信息会
+  // 误导成「成本契约变了」。改为「函数名之前最后一个 MARGIN 声明」：哪个 region 的
+  // 常量排在前面不影响结果，只有「声明被删/改名/移到函数之后」才该红。
   const regionAt = bundle.indexOf('function useAnchoredMaxHeight')
   assert.notEqual(regionAt, -1, '官方 primitives 里找不到 useAnchoredMaxHeight：边距判据需重新取证')
-  const region = bundle.slice(Math.max(0, regionAt - 900), regionAt)
-  const matched = /const\s+MARGIN\s*=\s*(\d+)/.exec(region)
-  assert.ok(matched !== null, '官方 useAnchoredMaxHeight 的 MARGIN 常量形状变了：需重新取证')
+  const before = bundle.slice(0, regionAt)
+  const declarations = [...before.matchAll(/const\s+MARGIN\s*=\s*(\d+)/g)]
+  assert.ok(
+    declarations.length > 0,
+    '官方 primitives 里 useAnchoredMaxHeight 之前找不到 MARGIN 声明：边距判据需重新取证',
+  )
+  // 只认紧邻的那一个：取最后一个（最接近函数体）。同时确认函数体里确实引用了它，
+  // 否则「函数被重排到别处」时这条钉子会静默失效。
+  const matched = declarations[declarations.length - 1]
+  const body = bundle.slice(regionAt, bundle.indexOf('\n}', regionAt))
+  assert.match(body, /\bMARGIN\b/, 'useAnchoredMaxHeight 函数体不再引用 MARGIN：边距判据需重新取证')
   assert.equal(
     MENU_VIEWPORT_MARGIN,
     Number(matched[1]),
     `官方 MARGIN 已变为 ${matched[1]}：同步 menuFit.ts 的 MENU_VIEWPORT_MARGIN`,
+  )
+})
+
+test('margin 依赖是显式的：调用点传 MENU_VIEWPORT_MARGIN，不靠官方默认值巧合', () => {
+  // 这条钉的是「显式」本身：上游 0.1.7 给 useAnchoredMaxHeight 加了第 4 个可选参
+  // margin（默认 MARGIN=12），插件不传也能跑，但那是隐式巧合——上游改默认值，
+  // 本菜单贴边距离会静默跟着漂，而插件毫无察觉。传自己的常量把依赖变成显式的。
+  const source = readFileSync(join(root, 'src', 'client', 'ModelSelect.tsx'), 'utf8')
+  assert.match(
+    source,
+    /useAnchoredMaxHeight\([^)]*MENU_VIEWPORT_MARGIN\)/,
+    '调用点必须显式传 MENU_VIEWPORT_MARGIN 作为第 4 参（不得依赖官方默认 margin）',
   )
 })
