@@ -7,6 +7,7 @@ import {
   dmsEffectiveEffortIndex,
   dmsEffortBusy,
   dmsIsActiveDrag,
+  dmsRetainedEffortLabel,
   dmsShouldAdoptLateSuccess,
   dmsSliderLevels,
   dmsPointerRaw,
@@ -115,6 +116,46 @@ test('dmsEffortBusy：自身提交中或目录上有 select 在途都算忙（�
   assert.equal(dmsEffortBusy(false, 'selecting'), true, '模型切换在途 → 忙')
   assert.equal(dmsEffortBusy(true, 'ready'), true, '自身提交中 → 忙')
   assert.equal(dmsEffortBusy(true, 'selecting'), true, '两者叠加 → 忙')
+})
+
+test('dmsEffortBusy：pending 判据优先于 status（rc.2 目录「未决选择」早于 status 翻转到 selecting）', () => {
+  // DSH 0.1.7-rc.2 起官方目录用 `pending !== null` 记「已提交未决的选择」：
+  // select() 一调用就写 pending，RPC 未返回前 status 仍是 idle/ready。
+  // 只看 status 会漏掉这个窗口期，拖动被接受后与在途 select 交错。
+  assert.equal(dmsEffortBusy(false, 'idle', { provider: 'p', model: 'm' }), true,
+    'pending 非空且 status 未翻 → 仍算忙')
+  assert.equal(dmsEffortBusy(false, 'ready', { provider: 'p', model: 'm' }), true,
+    'pending 非空且 status=ready → 忙')
+  assert.equal(dmsEffortBusy(false, 'idle', null), false, 'pending 为空且未在提交 → 不忙')
+  assert.equal(dmsEffortBusy(false, 'ready', null), false, 'pending 为空且未在提交 → 不忙')
+  // 自身提交中时 pending 有无都忙
+  assert.equal(dmsEffortBusy(true, 'idle', null), true, '自身提交中 → 忙')
+  assert.equal(dmsEffortBusy(true, 'selecting', null), true, '自身提交中且 status=selecting → 忙')
+})
+
+test('dmsEffortBusy：pending 缺省（rc.1 及更早运行时）时退回 status 判据', () => {
+  // rc.2 之前的官方目录没有 pending 字段，undefined 时必须按老规则判，
+  // 否则老运行时永远误判为「不忙」。
+  assert.equal(dmsEffortBusy(false, 'selecting', undefined), true, '无 pending 字段时 status=selecting → 忙')
+  assert.equal(dmsEffortBusy(false, 'ready', undefined), false, '无 pending 字段时 status=ready → 不忙')
+})
+
+test('dmsRetainedEffortLabel：已选模型离开 catalog 时回落到目录保留的 effort 文案', () => {
+  // rc.2 官方目录「保留态」：current 留着但 catalog 查不到该模型（provider/model 消失），
+  // 此时官方 trigger 显示 retainedEffort，本插件必须同规则否则文案莫名丢失。
+  const retained = stateOf({ current: 'high', efforts: ['low', 'high', 'max'] })
+  retained.retainedEffort = 'HIGH'
+  assert.equal(dmsRetainedEffortLabel(retained), 'HIGH', '模型离开目录后回落 retainedEffort')
+})
+
+test('dmsRetainedEffortLabel：模型仍在 catalog / 老运行时 → undefined', () => {
+  // 模型可解析时不应回落（effortLabel 走 reasoning 分支）；
+  // rc.1 及更早运行时没有该字段，回落值必须是 undefined 而非空串（空串会让 trigger 渲染出空胶囊）。
+  assert.equal(dmsRetainedEffortLabel(stateOf({ current: 'low', efforts: ['low', 'high'] })), undefined,
+    '模型仍在目录 → 不回落')
+  const noField = stateOf({ current: 'low', efforts: ['low', 'high'] })
+  assert.equal('retainedEffort' in noField, false, 'stateOf 不注入该字段')
+  assert.equal(dmsRetainedEffortLabel(noField), undefined, '老运行时无该字段 → undefined')
 })
 
 test('dmsShouldAdoptLateSuccess：回滚后无新提交/无拖动/模型未变时采纳迟到成功', () => {

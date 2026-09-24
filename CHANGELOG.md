@@ -6,6 +6,31 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.3.3] - 2026-09-25
+
+### 适配
+
+- **跟进 DSH `0.1.7-rc.2` 官方 `ui-model-selection` 的目录「未决选择」语义**
+  （`pending`）：`dmsEffortBusy` 的判据从 `status === 'selecting'` 改为
+  `pending !== null`。官方目录在 `select()` 一被调用时就写入 `pending`，而 `status`
+  要等 RPC 推进才翻到 `selecting`——只看 status 的这个窗口期里，滑杆拖动会被接受并与
+  在途的模型切换交错（目录 select 是 last-writer-wins，effort RPC 会打到旧模型上）。
+  老运行时（rc.1 及更早）没有 `pending` 字段，`undefined` 时自动退回 `status` 判据，
+  向前兼容不变。
+- **已选模型离开 catalog 时 effort 文案回落 `retainedEffort`**：rc.2 官方目录把
+  `current` 改为「保留态」（模型/提供商从 catalog 消失后仍保留该选择），官方
+  `ModelSelect` 的 `effortLabel` 在 `reasoning === undefined` 时回落到
+  `state.retainedEffort`。本插件原实现直接返回 `undefined`，trigger 会莫名丢掉档位名。
+  现抽出纯函数 `dmsRetainedEffortLabel` 并同规则回落。
+- 定位依据：本轮 Code Review（外部 Agent 链路失败后退到本会话后台只读 agent）发现
+  rc.1→rc.2 上游实为 346 commits / 3429 files 的大版本（此前 CHANGELOG「仅新增字段」
+  的表述不准确，已在本段更正）；本插件上一轮零源码改动之所以正确，靠的是契约点
+  (`conversation.input.model` 仍为 single、官方仍未声明 priority) 恰好没动 + 两侧钉子
+  测试全绿，而非上游没动。
+- 测试：新增 4 条用例（pending 优先 / pending 缺省回退 / retainedEffort 回落 /
+  老运行时无该字段），`effort.test.mjs` 29 条全绿，全仓 117 条全绿 + 双 program
+  typecheck + `pnpm build`。
+
 ## [0.3.2] - 2026-09-24
 
 ### 变更

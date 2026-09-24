@@ -56,6 +56,13 @@ export declare function dmsClampIndex(value: number, count: number): number;
  */
 export declare function dmsPointerRaw(clientX: number, left: number, width: number, levelCount: number, current: number): number;
 export declare function dmsCurrentModel(state: DirectoryState): ModelEntry | undefined;
+/**
+ * trigger 的 effort 文案：已选模型在 catalog 中查不到时（rc.2 官方目录「保留态」：
+ * current 仍留着，模型/提供商已离开目录）回落到目录的 `retainedEffort`。
+ * 官方 ModelSelect 同规则——不回落会让 trigger 在模型离开目录后莫名丢掉档位名。
+ * 老运行时（rc.1 及更早）无 retainedEffort 字段，回落值为 undefined，行为不变。
+ */
+export declare function dmsRetainedEffortLabel(state: DirectoryState): string | undefined;
 /** 当前生效档位：用户已选优先，其次模型默认，最后取中间档。 */
 export declare function dmsEffectiveEffortIndex(levels: readonly EffortLevel[], state: DirectoryState): number;
 /** 滑块档位：少于两档（无法构成滑杆）时返回空数组。 */
@@ -65,8 +72,15 @@ export declare function dmsSliderLevels(state: DirectoryState): readonly EffortL
  * （目录 select 是 last-writer-wins，模型切换在途时再发 effort RPC 会与
  * 它交错——effort 打到旧模型上，与模型切换互相覆盖；choose() 按同一状态
  * 拒绝了模型点击，滑杆必须同规则拒绝交互）。
+ *
+ * 目录在途的判据是 `pending !== null`（DSH 0.1.7-rc.2 起官方目录语义）：
+ * 它比 `status === 'selecting'` 早一步置位——`select()` 一被调用就记下
+ * pending，RPC 未返回前 status 仍是 idle/ready。只按 status 判断存在一个
+ * 窗口期：pending 已写入而 status 未翻，此时拖动会被接受并与在途的 select
+ * 交错。旧运行时没有 pending 字段（rc.1 及更早），`pending` 为 undefined
+ * 时退回 status 判据，保证向后兼容。
  */
-export declare function dmsEffortBusy(committing: boolean, status: DirectoryState['status']): boolean;
+export declare function dmsEffortBusy(committing: boolean, status: DirectoryState['status'], pending?: DirectoryState['pending']): boolean;
 /**
  * 超时回滚后 select 迟到成功是否应采纳并同步 UI：
  * 只有当自回滚以来没有任何新的提交改写 committedRef（仍等于回滚前的档位）、

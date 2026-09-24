@@ -30,7 +30,7 @@ import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
-import { dmsChoosePlan, dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsShouldAdoptLateSuccess, dmsSliderLevels } from './effort.ts'
+import { dmsChoosePlan, dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsRetainedEffortLabel, dmsShouldAdoptLateSuccess, dmsSliderLevels } from './effort.ts'
 // 辐射画布（绘制纯函数 + 动画循环 hook）与指针拖动状态机：从 EffortSlider
 // 组件内拆分独立成模块，组件本体只保留档位/提交/渲染三件事。
 import { useEffortCanvas } from './effortCanvas.ts'
@@ -173,7 +173,7 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 		setPreview(Math.max(0, dmsEffortIndex(levels, previous)));
 	}, [levels]);
 	const commit = react.useCallback(async (raw: number): Promise<void> => {
-		if (dmsEffortBusy(committingRef.current, state.status)) return;
+		if (dmsEffortBusy(committingRef.current, state.status, state.pending)) return;
 		// 先按钳位后的档位判断是否无操作：落回已提交的同一档（含拖动归位、键盘
 		// 重复按当前档）时，不发多余 RPC，也不闪本地 busy 灰——原实现把这次早退
 		// 放在 setCommitting(true)/乐观 setState 之后，同一档提交仍会闪一次。
@@ -565,8 +565,13 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	}, [choices, state.current]);
 	const reasoning = currentChoice?.model.reasoning;
 	const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
-	const effortLabel = reasoning === void 0 ? void 0 : effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
-	const busy = state.status === "selecting";
+	// 已选模型离开 catalog 时（rc.2 官方目录「保留态」语义：current 仍留着，
+	// catalog 里已查不到），effort 文案回落到目录的 retainedEffort——官方
+	// ModelSelect 同规则，否则 trigger 会莫名丢掉档位名。
+	const effortLabel = reasoning === void 0
+		? dmsRetainedEffortLabel(state)
+		: effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
+	const busy = dmsEffortBusy(false, state.status, state.pending);
 	// choose 的最新输入面经 ref 读取：choose 因此不随 busy/current/choices/open 抖动
 	// —— 它作为行 props 传进 ModelOption，引用一变数百行的自定义 memo 就全线失效。
 	const chooseInputRef = react.useRef({ busy, current: state.current, choices, open });
