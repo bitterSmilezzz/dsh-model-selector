@@ -6,6 +6,24 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.3.5] - 2026-09-25
+
+### 修复
+
+- **EffortSlider 的忙态判据补齐 `pending`**（Code Review 发现，中危）：`0.1.7-rc.2`
+  起官方目录在 `select()` 入口即写 `pending`，而 `status` 要等 RPC 返回才翻到
+  `selecting`。上一轮适配改了 `commit()` 早退与 `ModelSelect` 主忙态两处，却漏了
+  `EffortSlider` 内部这处 `dmsEffortBusy(committing, state.status)`——在那段窗口期内，
+  拖动与键盘路径仍会被接受（RPC 最终仍被 `commit()` 拦下，不会打到旧模型），但已产生
+  preview 视觉变化，且 `is-busy` / `aria-disabled` 未置位，视觉与辅助技术反馈短暂不一致。
+  现改为 `dmsEffortBusy(committing, state.status, state.pending)`。
+
+### 测试
+
+- 补一条**调用点级**守卫：`src/**/*.tsx` 里每一处 `dmsEffortBusy(` 调用都必须传三个
+  实参（含 `pending`）。原有 `test/effort.test.mjs` 只覆盖纯函数本体，覆盖不到
+  「某一处调用漏传参」这类问题——本轮正是这样漏过去的。
+
 ## [0.3.4] - 2026-09-25
 
 ### 测试

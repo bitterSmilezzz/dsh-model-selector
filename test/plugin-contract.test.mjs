@@ -366,3 +366,40 @@ test('lib/types/client 的 .d.ts 集合与 src/client 的源文件集合一一�
   )
 })
 
+
+test('每一处 dmsEffortBusy 调用都传入 pending（rc.2 目录在途判据）', () => {
+  // 值级守卫：dmsEffortBusy 的第三参 pending 决定「select() 入口即忙」这段窗口期
+  // （status 要等 RPC 返回才翻到 selecting）。漏传一处的后果不会崩、也不会打错
+  // 模型（commit() 自己那处会拦），只是滑杆在窗口期仍可交互、视觉/aria 反馈不一致
+  // —— 2026-09-25 的 Code Review 正是这样漏过一处（EffortSlider 内部），故在此钉住
+  // 调用点本身：源码里 dmsEffortBusy( 的每一次调用都必须有三个实参。
+  const root2 = dirname(fileURLToPath(import.meta.url))
+  const files = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (/\.tsx?$/.test(entry.name)) files.push(full)
+    }
+  }
+  walk(join(root2, '..', 'src'))
+  const offenders = []
+  for (const file of files) {
+    // 剔掉注释再扫：注释里提到函数名不等于有一次调用（与 SEAT_PRIORITY 的
+    // 值级断言同理，避免被文字骗过）。
+    const text = readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    const calls = text.match(/dmsEffortBusy\(([^)]*)\)/g) ?? []
+    for (const call of calls) {
+      const args = call.slice('dmsEffortBusy('.length, -1)
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => part !== '')
+      if (args.length < 3) {
+        offenders.push(`${relative(root2, file)}: ${call}`)
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], '以下 dmsEffortBusy 调用缺少 pending 第三参（rc.2 窗口期会漏判忙态）')
+})

@@ -124,7 +124,11 @@ export const EffortSlider = react.memo(function EffortSlider({ state, select, t,
 	});
 	const redrawRef = react.useRef<(() => void) | null>(null);
 	const available = state.current !== null && levels.length >= 2;
-	const busy = dmsEffortBusy(committing, state.status);
+	// pending 取自 state（组件 prop 直接持有）：rc.2 官方目录在 select() 入口即写
+	// pending，status 要等 RPC 返回才翻到 selecting——这段窗口期内必须已算忙，
+	// 否则拖动/键盘路径会照常交互（commit() 的 :176 虽会拦下 RPC，但已产生
+	// preview 视觉变化且 is-busy / aria-disabled 未置位，反馈不一致）。
+	const busy = dmsEffortBusy(committing, state.status, state.pending);
 	const error = localError;
 	react.useEffect(() => {
 		if (!available || committingRef.current || draggingRef.current) return;
