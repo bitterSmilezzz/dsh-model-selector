@@ -6,6 +6,21 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.3.2] - 2026-09-24
+
+### 变更
+
+- **`@deepseek-ai/*` 依赖对齐到 DSH `0.1.7-rc.2`**：peerDependencies 与 devDependencies
+  双列同步升级（`dsh-api-session-controller` / `dsh-client-locale` / `dsh-client-store` /
+  `dsh-client-ui-conversation` / `dsh-client-ui-model-selection` / `dsh-client-ui-primitives` /
+  `dsh-client-ui-renderer` / `dsh-client-ui-slots` / `dsh-session`）。
+- **未做源码适配**：已核对 rc.1→rc.2 的破坏性变更面——`conversation.input.model`
+  座位仍是 `single`，官方占用者仍未声明 `priority`（本插件 `priority: -1` 遮蔽继续成立）；
+  `ModelSelectInjected` 四成员签名不变；`ModelDirectoryState` 仅新增 `pending` 与可选
+  `retainedEffort` 字段；官方删除的 `conversation.blocks` composer 发布逻辑本插件 0 处引用。
+- 验证：113 用例全绿 + host/client 双 program typecheck + `pnpm build`（`lib/` 与全新构建
+  逐字节一致，发布门禁的 `git diff --exit-code -- lib` 可通过）。
+
 ## [0.3.1] - 2026-09-24
 
 ### 修复
