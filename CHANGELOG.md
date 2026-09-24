@@ -6,6 +6,16 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.3.4] - 2026-09-25
+
+### 测试
+
+- 补 `retainedEffort` 早退分支残留旧值的行为钉子（Code Review 复核建议）：官方目录
+  `syncInputs()` 在 catalog 未 ready / 未投影时用条件展开写入，`retainedEffort` 会保留
+  上一次的值而非清空；新增用例钉住「旧值原样返回」「显式 `undefined` 返回 undefined」
+  「空串透传」三种形状，防止未来有人顺手改成 `reasoning === undefined ? undefined : …`。
+  无运行时行为变化。
+
 ## [0.3.3] - 2026-09-25
 
 ### 适配

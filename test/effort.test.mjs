@@ -158,6 +158,23 @@ test('dmsRetainedEffortLabel：模型仍在 catalog / 老运行时 → undefined
   assert.equal(dmsRetainedEffortLabel(noField), undefined, '老运行时无该字段 → undefined')
 })
 
+test('dmsRetainedEffortLabel：官方早退分支保留旧值时沿用（不清空、不覆盖）', () => {
+  // Code Review 补钉：rc.2 官方目录 syncInputs 的早退分支（catalog 未 ready / 未投影）
+  // 用「retainedEffort === undefined ? {} : { retainedEffort }」展开写入——上一次算出的
+  // 档位名会被原样保留，而不会因为本次投影缺失而被清空。插件的读数规则必须容忍这种
+  // 「旧值仍在」的形状（原样返回即可，官方 ModelSelect 也正是直接读该字段）。
+  const stale = stateOf({ current: 'high', efforts: ['low', 'high', 'max'] })
+  stale.retainedEffort = 'MEDIUM'
+  assert.equal(dmsRetainedEffortLabel(stale), 'MEDIUM', '旧值原样返回，不被清空')
+  const empty = stateOf({ current: 'high', efforts: ['low', 'high', 'max'] })
+  empty.retainedEffort = undefined
+  assert.equal('retainedEffort' in empty, true, '字段存在但值为 undefined 是合法形状')
+  assert.equal(dmsRetainedEffortLabel(empty), undefined, '显式 undefined → undefined（非空串）')
+  const blank = stateOf({ current: 'high', efforts: ['low', 'high', 'max'] })
+  blank.retainedEffort = ''
+  assert.equal(dmsRetainedEffortLabel(blank), '', '空串透传：官方同规则，不改写官方值')
+})
+
 test('dmsShouldAdoptLateSuccess：回滚后无新提交/无拖动/模型未变时采纳迟到成功', () => {
   // committedRef 仍等于回滚前的 previous、提交纪元未推进（epoch === epochAtCommit）、
   // 无拖动、无提交在途、生效模型仍是提交时那个 → 迟到成功仍对应当前链
