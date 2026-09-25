@@ -6,6 +6,22 @@
 
 本 CHANGELOG 自 0.1.17 起建立并回填：更早的历史以 GitHub Release 与 git tag 为准。
 
+## [0.3.7] - 2026-09-25
+
+### 修复
+
+- **「零引用 ⇒ optional」口径守卫改为只认真实 import 形态**（Code Review 发现，中危）：
+  原判据用 `content.includes(packageName)` 判断某 peer 是否被引用，于是**注释里点名该包
+  也算「已引用」**——而这条钉子的存在目的正是「防止再漏标 optional」，一把被自己的注释
+  喂饱的尺子量不出下一次漏标。现改为先剥块注释与引号外的行注释，再匹配真实 import 形态
+  （`from '<pkg>'` / `from '<pkg>/sub'` / 动态 `import('<pkg>')`，包名整体匹配，
+  `pkg` 与 `pkg-extra` 不会互相冒认），并与 asr-voice / dsh-notify 统一为同一把尺子。
+
+### 测试
+
+- 新增 `referencesPackage` 形态单元测试与「零引用扫描不会被注释喂成恒真」变异测试
+  （破坏 → 变红已实测）。
+
 ## [0.3.6] - 2026-09-25
 
 ### 测试
