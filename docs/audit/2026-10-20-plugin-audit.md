@@ -7,7 +7,7 @@ Playwright + CDP，browser-session cookie 按 `browser-auth.ts` 算法本地签�
 本文件只记录**可复现**的问题：每条都有现象、根因（file:line）、取证方法与修复状态。
 推测项一律标注「未取证」，不与已验证结论混排。
 
-轮次：第 1 轮（键盘/焦点/提示）· 第 2 轮（无障碍 + 并发重入，见下方「六、第 2 轮」）。
+轮次：第 1 轮（键盘/焦点/提示）· 第 2 轮（无障碍 + 并发重入）· 第 3 轮（英文界面 + P3 优化，见「八」）。
 
 ---
 
@@ -190,3 +190,61 @@ Playwright + CDP，browser-session cookie 按 `browser-auth.ts` 算法本地签�
 | P2#5 切到其他 App 菜单不关 | 仍未取证（需真机窗口遮蔽） |
 | P3#9–13 | 未动 |
 | 版本发布 | 第 1、2 轮共 9 条修复尚未发版（当前 tag `v0.4.3`，`main` 已领先 2 个提交） |
+
+---
+
+## 八、第 3 轮（2026-10-20 第三轮）
+
+### 18. 英文界面走查
+
+以 `locale: en-US` 打开真实界面，逐项核对文案与布局：
+
+- 触发按钮、占位符、分组名、徽标、滑杆标签、空态、右下读数**全部正确切换**
+  （`Search models` / `Reasoning` / `Effort` / `No models match “zzz-nothing”.`）。
+- **无截断**：`.dms-badge`、`.dms-effort-value` 的 `scrollWidth === clientWidth`；
+  菜单宽度恒为 280px，`documentElement.scrollWidth` 未超视口。
+- 长模型名（routing group 自带中文长描述）仍按设计省略号截断，`title` 提供全文 —— 这是预期行为。
+- **结论**：英文侧无缺陷。唯一可议之处是 `routing group` 这类**模型名本身**来自目录数据，
+  切到英文也不翻译（正确：属于用户/后端数据，按 i18n 规则不得翻译）。
+
+### 19. 合并重复的 resize 监听（P3#10 已修）
+
+- **原状**：`ModelSelect.tsx` 有两个独立的 `window.addEventListener('resize')`
+  —— 一个在布局测量 effect 里（rAF 合并后 measure），一个在「释放高度锁」effect 里。
+- **取证**：监听器探针按调用栈归属，插件每次打开菜单新增 **4** 个监听器
+  （window resize ×2、window scroll ×1、document pointerdown ×1）。
+- **修复**：把「释放高度锁」并入已有的 `onViewportChange` rAF 回调，删除第二个 effect。
+- **复核**：插件侧新增监听器变为 **3** 个（`window::resize 1`、`window::scroll 1`、
+  `document::pointerdown 1`）。
+
+### 20. `dmsSliderLevels()` 每次渲染返回新数组（P3#11 已修）
+
+- **根因**：`effort.ts:124-127` 对 `efforts.length < 2` 返回新的 `[]` 字面量；正常路径返回
+  `reasoning.efforts`（这一支本来稳定）。滑杆把它直接用作 effect 依赖，空档位时
+  （非推理模型）同步 effect 每渲染必跑一次，而该 effect 内部 `setState` —— 多一轮提交。
+- **修复**：在 `EffortSlider` 内以 `efforts` 引用为依赖 `useMemo` 包住 `dmsSliderLevels(state)`
+  （保留「少于两档不给滑杆」规则仍只在 `effort.ts` 一处）。
+- **复核**：菜单静止 300ms 内 DOM 变更 **0** 次（无自激重渲染）；123 项测试全绿。
+
+### 21. 打开延迟复测（P3#9 不成立）
+
+补齐冷/热两档数据后，此前记的 85ms 不再成立：
+
+| 场景 | 实测 |
+| --- | --- |
+| 冷启动后首次打开 | **21 ms** |
+| 连续开关（热） | **12 / 10 / 9 / 8 ms**（中位 ~9ms） |
+
+即：先前 85ms 是含首帧布局与目录首次加载的一次性测量，稳态打开接近一帧。
+**P3#9（全量渲染 105 行）在稳态下不是问题**，虚拟化/折叠默认值不作为建议提出。
+
+---
+
+## 九、第 3 轮后剩余
+
+| 项 | 状态 |
+| --- | --- |
+| P2#5 切到其他 App 菜单不关 | 仍未取证（headless 无窗口遮蔽） |
+| P3#12 `inject` 双重声明 | 语义等价、无运行时影响，建议随下次重构顺带处理 |
+| P3#13 打开菜单快捷键 | 属新功能而非缺陷，未做 |
+| 发版 | 三轮共 12 条修复未发版（tag `v0.4.3`，`main` 领先 4 个提交） |

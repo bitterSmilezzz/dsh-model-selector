@@ -32,7 +32,7 @@ import type { ModelDirectoryState, ModelSelectInjected } from '@deepseek-ai/dsh-
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Effort helpers live in effort.ts (pure, no JSX/DOM) so node --test can cover them.
-import { dmsChoosePlan, dmsClampIndex, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsRetainedEffortLabel, dmsShouldAdoptLateSuccess, dmsSliderLevels } from './effort.ts'
+import { dmsChoosePlan, dmsClampIndex, dmsCurrentModel, dmsEffortIndex, dmsEffectiveEffortIndex, dmsEffortBusy, dmsRetainedEffortLabel, dmsShouldAdoptLateSuccess, dmsSliderLevels } from './effort.ts'
 // 辐射画布（绘制纯函数 + 动画循环 hook）与指针拖动状态机：从 EffortSlider
 // 组件内拆分独立成模块，组件本体只保留档位/提交/渲染三件事。
 import { useMaxParticles } from './effortParticles.ts'
@@ -95,7 +95,13 @@ const NOTICE_TTL_MS = 4e3;
 // 只有最高档（Ultra/Max）用蓝紫渐变并在填充区内跑稀疏粒子（见 ./effortParticles.ts）。
 // 指针拖动状态机见 ./effortDrag.ts（useEffortDrag）；本组件只做档位状态、提交/回滚与渲染。
 export const EffortSlider = react.memo(function EffortSlider({ state, select, t, onSelectFailure }: EffortSliderProps) {
-	const levels = dmsSliderLevels(state);
+	// dmsSliderLevels 每次都返回新数组（或空数组字面量）：直接用在 deps 里会让下方
+	// 同步 effect 每渲染必跑一次（它在 effect 里 setState，等于每次渲染多一轮提交）。
+	// 按 efforts 引用缓存，同一模型目录下引用稳定。
+	const effortsRef = dmsCurrentModel(state)?.reasoning?.efforts;
+	// 仍然走 dmsSliderLevels（「少于两档不给滑杆」这条规则只保留一处），但只在
+	// efforts 引用变化时重算，返回的数组因此稳定。
+	const levels = react.useMemo(() => dmsSliderLevels(state), [effortsRef]);
 	// 惰性初始化到当前生效档：useState("")/0 会让菜单打开的第一帧档位名为空、
 	// 进度闪 0%，随后才被同步 effect 纠正（首帧即正确，无闪烁）。
 	const [effort, setEffort] = react.useState(() => levels[dmsEffectiveEffortIndex(levels, state)]?.id ?? "");
@@ -692,6 +698,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			raf = requestAnimationFrame(() => {
 				raf = 0;
 				measure();
+				// 视口变了，拖动期间锁定的高度/位置随之失效：下一次交互重新测量锁定。
+				// 原先这是第二个独立 window.resize 监听（同一事件挂两次），并进这里
+				// 后每次视口变化只注册一个监听器、也只跑一次 rAF。
+				setLockedHeight(null);
+				setLockedPos(null);
 			});
 		};
 		window.addEventListener("resize", onViewportChange, { passive: true });
@@ -734,13 +745,6 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		focusedForOpenRef.current = true;
 		searchRef.current?.focus();
 	}, [open, menuPos]);
-	// 视口变化时释放高度锁，下一次交互重新按新尺寸锁定。
-	react.useEffect(() => {
-		if (!open) return;
-		const release = (): void => { setLockedHeight(null); setLockedPos(null); };
-		window.addEventListener("resize", release);
-		return () => window.removeEventListener("resize", release);
-	}, [open]);
 	// 打开即把当前选中行滚进可视区：选中模型在长列表深处时不用手动翻找。
 	// 手动改 scrollTop 而不用 scrollIntoView，避免连带滚动页面/其它祖先容器。
 	// 吸顶分组头（sticky top:0）会盖住滚到容器顶缘的行：偏移量按所在组的
@@ -1302,7 +1306,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 						// role=note：静态辅助说明，从菜单项语义里退出来。
 						<div className="dms-more" role="note">{t('search.more', { shown: String(MAX_VISIBLE_HITS), total: String(hits.total) })}</div>
 					)}
-					{state.current !== null && dmsSliderLevels(state).length >= 2 && (
+					{state.current !== null && (dmsCurrentModel(state)?.reasoning?.efforts.length ?? 0) >= 2 && (
 						<div className="dms-effortFooter">
 							<span className="dms-effortFooterLabel">{t('menu.effort')}</span>
 							<EffortSlider state={state} select={select} t={t} onSelectFailure={markSelectFailure} />
