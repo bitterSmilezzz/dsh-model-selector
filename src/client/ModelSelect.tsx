@@ -590,6 +590,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	// 视觉上就是菜单闪一下（桌面 App 录屏实测）。effort 只压滑杆自身状态。
 	const pendingModelSwitch = state.pending !== null && state.current !== null
 		&& (state.pending.provider !== state.current.provider || state.pending.model !== state.current.model);
+	// 同帧防重入：busy 来自 store 快照，两次点击落在同一帧时它还是旧值（React 未重渲染、
+	// 目录也还没写 pending），两次都会穿过守卫各发一条 select。目录 select 是
+	// last-writer-wins，第二条会覆盖第一条——实测同一帧连点两行，aria-label 变了 2 次。
+	// 这条 ref 在调用瞬间同步置位，与渲染时机无关。
+	const selectingRef = react.useRef(false);
 	// choose 的最新输入面经 ref 读取：choose 因此不随 busy/current/choices/open 抖动
 	// —— 它作为行 props 传进 ModelOption，引用一变数百行的自定义 memo 就全线失效。
 	const chooseInputRef = react.useRef({ busy, current: state.current, choices, open });
@@ -857,7 +862,13 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	}, [locked, open, close]);
 	const choose = react.useCallback((selection: ModelSelection): void => {
 		const { busy: isBusy, current, choices: catalog } = chooseInputRef.current;
-		if (isBusy) return;
+		// 忙态（模型切换/档位提交在途）点行此前是静默 return：用户连点两次没有任何反应，
+		// 也看不出是被拒绝还是没点中。目录 select 是 last-writer-wins，必须继续拒绝，
+		// 但要把「正在切换」说出来。selectingRef 兜住「同一帧两次点击」的窗口。
+		if (isBusy || selectingRef.current) {
+			setNotice(t("notice.busy"));
+			return;
+		}
 		if (current?.provider === selection.provider && current.model === selection.model) {
 			setNotice(t("notice.already"));
 			return;
@@ -872,6 +883,7 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			...plan.effort === void 0 ? {} : { reasoningEffort: plan.effort }
 		};
 		lastActionRef.current = "select";
+		selectingRef.current = true;
 		const autoName = plan.effort === void 0
 			? ""
 			: target?.model.reasoning?.efforts.find((level) => level.id === plan.effort)?.name ?? plan.effort;
@@ -923,6 +935,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 				// 超时 / select 拒绝：都按切换失败播报（防御性 catch 同时杜绝
 				// unhandled rejection——未来注入面变更也不会让它漏出去）。
 				showToast(t("notice.selectFailed"));
+			} finally {
+				// 无论成功、失败还是超时都放行下一次选择：目录 pending 已清，UI 不再忙。
+				selectingRef.current = false;
 			}
 		})();
 		// 依赖只剩稳定引用（注入面的 select/t、目录 store、close/showToast 都是
@@ -1199,7 +1214,9 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 						// （行用 menuitemradio）。aria-busy 从 .dms-menu 移到这里：它罩住
 						// live region 会压制播报，而 menu 容器自身才是「内容仍在变」的子树。
 						role={hits !== null ? 'listbox' : 'menu'}
-						aria-busy={state.status === 'loading' || busy}
+						// 只表达「列表内容即将整体替换」：effort 提交也会让 busy 为真，但列表行不变，
+						// 罩住它会让读屏在调整档位时反复宣布列表忙碌（视觉侧早有 data-model-switch 区分）。
+						aria-busy={state.status === 'loading' || pendingModelSwitch}
 						data-model-switch={pendingModelSwitch ? 'true' : undefined}
 						aria-label={t("menu.aria")}
 					>
@@ -1244,15 +1261,19 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 											tabIndex={activeRowKey === headerKey ? 0 : -1}
 											className="dms-groupHeader"
 											aria-expanded={!isCollapsed}
-											aria-label={t('group.toggleAria', { name: group.name, count: String(group.models.length) })}
 											onFocus={() => onRowFocus(headerKey)}
 											onClick={() => toggleCollapse(group.id)}
 										>
 											<span className={`dms-groupChevron${isCollapsed ? ' dms-groupChevronClosed' : ''}`} aria-hidden="true">
 												{IconChevronDown}
 											</span>
+											{/* 不再用 aria-label 覆盖可见文本：那会让可达名与可见文字不匹配
+											    （axe label-content-name-mismatch，读屏与语音控制取词对不上）。
+											    改为「可见名称 + 可见数字 + 隐藏单位」，可达名由内容自然拼出
+											    “DeepSeek 2 个模型”，可见文本完整包含其中。 */}
 											<span id={headingId} className="dms-groupName">{group.name}</span>
 											<span className="dms-groupCount">{group.models.length}</span>
+											<span className="dms-sr">{t('group.countSuffix')}</span>
 										</button>
 										{!isCollapsed && group.models.map((model) => {
 											const rowKey = dmsRowKey(group.id, model.id);

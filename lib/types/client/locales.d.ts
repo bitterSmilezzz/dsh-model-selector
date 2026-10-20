@@ -17,7 +17,7 @@ export declare const zh: {
     "search.noMatch": string;
     "search.status": string;
     "search.more": string;
-    "group.toggleAria": string;
+    "group.countSuffix": string;
     "effort.providerDefault": string;
     "status.loading": string;
     "error.action": string;
@@ -28,6 +28,7 @@ export declare const zh: {
     "effort.failed": string;
     "effort.timeout": string;
     "notice.already": string;
+    "notice.busy": string;
     "notice.selectFailed": string;
     "toast.effortAuto": string;
     "badge.reasoning": string;
@@ -46,7 +47,7 @@ export declare const en: {
     "search.noMatch": string;
     "search.status": string;
     "search.more": string;
-    "group.toggleAria": string;
+    "group.countSuffix": string;
     "effort.providerDefault": string;
     "status.loading": string;
     "error.action": string;
@@ -57,6 +58,7 @@ export declare const en: {
     "effort.failed": string;
     "effort.timeout": string;
     "notice.already": string;
+    "notice.busy": string;
     "notice.selectFailed": string;
     "toast.effortAuto": string;
     "badge.reasoning": string;

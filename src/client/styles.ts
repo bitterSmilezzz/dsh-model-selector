@@ -283,7 +283,9 @@ export const CSS: string = `
   border: none;
   outline: none;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
-  color: var(--dsw-alias-label-tertiary);
+  /* 12px/500 属正文尺寸，WCAG AA 需 4.5:1：tertiary(600) 在白底仅 3.71:1，
+     降一档到 secondary(700)=5.80:1（深色主题 secondary(300)=10.42:1）。 */
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
   font-weight: 500;
@@ -299,7 +301,9 @@ export const CSS: string = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dms-groupCount { flex: 0 0 auto; color: var(--dsw-alias-label-dimmed); font-weight: 400; }
+/* 计数是信息而非装饰：dimmed(200)=1.26:1、tertiary(600)=3.71:1 均不达标，
+   用 secondary(700)=5.80:1（深色 secondary(300)=10.42:1）。 */
+.dms-groupCount { flex: 0 0 auto; color: var(--dsw-alias-label-secondary); font-weight: 400; }
 
 .dms-nameRow {
   display: flex;
@@ -312,7 +316,9 @@ export const CSS: string = `
   padding: 0 6px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
-  color: var(--dsw-alias-label-caption);
+  /* 10px 也是正文：caption(400)=2.13:1、tertiary(600)=3.71:1 都不达标，
+     用 secondary(700)=5.80:1（深色 secondary(300)=10.42:1）。 */
+  color: var(--dsw-alias-label-secondary);
   font-size: 10px;
   line-height: 16px;
   font-weight: 500;
@@ -360,7 +366,8 @@ export const CSS: string = `
   margin-left: 8px;
   width: auto;
   min-width: 4em;
-  color: var(--dsw-static-blue-500, #3b82f6);
+  /* 11px 读数：blue-500 在白底 3.68:1，blue-600 为 5.17:1（深色主题另有覆盖）。 */
+  color: var(--dsw-static-blue-600, #2563eb);
   font-size: 11px;
   line-height: 16px;
   text-align: right;
@@ -368,7 +375,9 @@ export const CSS: string = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.dms-effort.is-max .dms-effort-value { color: #8b5cf6; }
+/* 最高档紫色：11px 文字需 4.5:1，#8b5cf6 在白底只有 4.23:1，改用 violet-600 #7c3aed=5.70:1；
+   深色主题由下方 body[data-ds-dark-theme] 覆盖为更亮的 #a78bfa。 */
+.dms-effort.is-max .dms-effort-value { color: #7c3aed; }
 .dms-effort-slider {
   /* 由组件写入：滑块中心位置（相对轨道），两端各留 10px（滑块半径）。 */
   --dms-thumb-left: 10px;
@@ -519,7 +528,8 @@ export const CSS: string = `
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
-.dms-model-option-desc { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-tertiary, #9296a0); font-size: 10px; }
+/* 10px 描述：tertiary(600)=3.71:1 不达标，用 secondary(700)=5.80:1。 */
+.dms-model-option-desc { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary, #61666b); font-size: 10px; }
 .dms-model-check { color: var(--dsw-static-deepseek-500, #4d70ff); font-size: 15px; text-align: center; }
 /* 方向键导航把焦点落在选项上。选中态是「背景 + 加粗 + 勾号」，悬停是「背景」，
    两者与焦点指示必须两两可辨 —— 只用同一个 hover 背景 token 会让「焦点落在
@@ -543,7 +553,7 @@ export const CSS: string = `
   display: block;
   margin-top: 2px;
   overflow: hidden;
-  color: var(--dsw-alias-label-dimmed, #9296a0);
+  color: var(--dsw-alias-label-tertiary, #81858c);
   font-size: 10px;
   line-height: 14px;
   text-overflow: ellipsis;
@@ -557,6 +567,11 @@ export const CSS: string = `
   from { opacity: 0; transform: translateY(-5px) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* 深色主题色彩修正：浅色选定的 blue-600 / violet-600 在深色底上只有 3.04 / 2.76:1，
+   换同色系更亮一档（blue-400 6.18:1 / violet-400 5.77:1），语义不变。 */
+body[data-ds-dark-theme] .dms-effort-value { color: var(--dsw-static-blue-400, #60a5fa); }
+body[data-ds-dark-theme] .dms-effort.is-max .dms-effort-value { color: #a78bfa; }
+
 body:not([data-ds-dark-theme]) .dms-effort-track {
   background: #e9e9e9;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.65);
@@ -588,7 +603,7 @@ body:not([data-ds-dark-theme]) .dms-effort-knob {
 }
 .dms-effortFooterLabel {
   flex: 0 0 auto;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 11px;
   line-height: 18px;
   white-space: nowrap;

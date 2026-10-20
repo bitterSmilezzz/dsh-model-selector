@@ -7,6 +7,8 @@ Playwright + CDP，browser-session cookie 按 `browser-auth.ts` 算法本地签�
 本文件只记录**可复现**的问题：每条都有现象、根因（file:line）、取证方法与修复状态。
 推测项一律标注「未取证」，不与已验证结论混排。
 
+轮次：第 1 轮（键盘/焦点/提示）· 第 2 轮（无障碍 + 并发重入，见下方「六、第 2 轮」）。
+
 ---
 
 ## 一、本轮已修复（P1）
@@ -121,3 +123,70 @@ Playwright + CDP，browser-session cookie 按 `browser-auth.ts` 算法本地签�
 - **P3 五项为可选优化**：全量渲染、监听合并、数组缓存、inject 去重、快捷键。
 - 插件产物：`lib/client.js` 94.1 kB（gzip 28.8 kB），注入 CSS 16,321 B / 95 条规则；
   这些在 P3 落地时一并复测。
+
+---
+
+## 六、第 2 轮（2026-10-20 第二轮）
+
+### 14. 同一帧内连点两行会发出两条 select RPC（last-writer-wins 互相覆盖）
+
+- **现象**：菜单里快速点两行，`aria-label` 变了 **2** 次（即两次 select 都落地），
+  最终模型是后一条，前一条被静默覆盖。
+- **根因**：`choose()` 的忙态来自 store 快照（`ModelSelect.tsx:859` 的
+  `chooseInputRef.current.busy`）。两次点击落在同一帧时，React 尚未因
+  `pending` 重渲染，目录也还没写 `pending`，两次都判定「不忙」全部放行；
+  `busy` 的 `dmsEffortBusy` 依赖 `state.pending`，而 pending 由 RPC 入口异步写入。
+- **取证**：`MutationObserver` 监听 trigger 的 `aria-label`，同一帧 `a.click(); b.click()`
+  记录到 2 次变更。
+- **修复**：新增同步 `selectingRef`，在调用瞬间置位、`finally` 复位；
+  与 `busy` 一起做守卫（`ModelSelect.tsx:858-885`）。
+- **复核**：同一帧连点两行，`aria-label` 只变 **1** 次。
+
+### 15. 忙态点击无反馈（第 1 轮 P2#6 已修）
+
+- **修复**：忙态不再静默 `return`，改播报 `notice.busy`（「正在切换，请稍候」/
+  「Switching, please wait」），走与「已是当前模型」同一条提示通道。
+
+### 16. `aria-busy` 把 effort 提交也算「列表忙」（第 1 轮 P2#7 已修）
+
+- **修复**：`aria-busy` 改用 `pendingModelSwitch`（`ModelSelect.tsx:1199` 附近），
+  只有「换模型」与加载才置位；effort 提交不再让读屏反复宣布列表忙碌。
+
+### 17. 无障碍扫描：15 处对比度不足 + 3 处可达名不匹配（全部修复）
+
+工具：axe-core 4.x，`wcag2a/wcag2aa/wcag21a/wcag21aa`，浅/深两套主题各扫一次。
+
+**对比度**（菜单底面不透明，故直接按菜单底色计算）：
+
+| 元素 | 原值 | 原比 | 改为 | 现比 |
+| --- | --- | --- | --- | --- |
+| 分组名 12px/500 | `label-tertiary` #81858c | 3.71 | `label-secondary` #61666b | 5.80 |
+| 分组计数 | `label-dimmed` #e1e5ee | **1.26** | `label-secondary` | 5.80 |
+| 「推理」徽标 10px | `label-caption` #adb2b8 | **2.13** | `label-secondary` | 5.80 |
+| 模型描述 10px | `label-tertiary` | 3.71 | `label-secondary` | 5.80 |
+| 供应商名 10px | `label-dimmed` | 1.26 | `label-tertiary` #81858c | 4.79 |
+| 档位读数 11px | `blue-500` #3b82f6 | 3.68 | `blue-600` #2563eb | 5.17 |
+| 最高档读数 | `#8b5cf6` | 4.23 | `#7c3aed` | 5.70 |
+| 滑杆左标签 11px | `label-tertiary` | 3.71 | `label-secondary` | 5.80 |
+
+深色主题另有覆盖：档位读数 `blue-400` #60a5fa（6.18:1）、最高档 `#a78bfa`（5.77:1）
+——`blue-600`/`#7c3aed` 在深色底上只有 3.04/2.76:1。
+
+**可达名不匹配**（`label-content-name-mismatch`）：
+
+- 分组头用 `aria-label="{name}（{count} 个模型）"` 覆盖了可见文本「DeepSeek 2」，
+  读屏与语音控制取词对不上。改为**不用 aria-label**：可达名由「可见名称 + 可见数字
+  + clip 隐藏单位」自然拼成 `DeepSeek 2 个模型`，可见文本完整包含其中。
+- 顺带删掉因此失去引用的 `group.toggleAria` 键（字典守卫测试当场抓到）。
+
+**复核**：浅色与深色主题 axe 均 **no violations**；123 项测试全绿；伞仓门禁 22/22。
+
+---
+
+## 七、第 2 轮后仍待处理
+
+| 项 | 状态 |
+| --- | --- |
+| P2#5 切到其他 App 菜单不关 | 仍未取证（需真机窗口遮蔽） |
+| P3#9–13 | 未动 |
+| 版本发布 | 第 1、2 轮共 9 条修复尚未发版（当前 tag `v0.4.3`，工作树已领先） |
