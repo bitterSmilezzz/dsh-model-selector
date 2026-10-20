@@ -163,6 +163,7 @@ export const CSS: string = `
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
+  pointer-events: none;
 }
 
 /* Provider-load failure strip: capped and scrollable so a long list of failed

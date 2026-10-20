@@ -556,6 +556,18 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const triggerRef = react.useRef<HTMLButtonElement | null>(null);
 	const searchRef = react.useRef<HTMLInputElement | null>(null);
 	const lastLoadRef = react.useRef(0);
+	const selectTimerRef = react.useRef<number | null>(null);
+	const mountedRef = react.useRef(false);
+	react.useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+			if (selectTimerRef.current !== null) {
+				window.clearTimeout(selectTimerRef.current);
+				selectTimerRef.current = null;
+			}
+		};
+	}, []);
 	// 注入 face 每次 store 更新都会重建 load 引用；用 ref 挡住身份抖动，
 	// effect 只按 available/open 语义触发。
 	const loadRef = react.useRef(load);
@@ -903,19 +915,23 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					const timer = window.setTimeout(() => {
 						if (settled) return;
 						settled = true;
+						selectTimerRef.current = null;
 						reject(new Error(t("notice.selectFailed")));
 					}, EFFORT_COMMIT_TIMEOUT_MS);
+					selectTimerRef.current = timer;
 					select(full).then(
 						(settledResult) => {
 							if (settled) return;
 							settled = true;
 							window.clearTimeout(timer);
+							selectTimerRef.current = null;
 							resolve(settledResult);
 						},
 						(cause: unknown) => {
 							if (settled) return;
 							settled = true;
 							window.clearTimeout(timer);
+							selectTimerRef.current = null;
 							reject(cause);
 						},
 					);
@@ -938,7 +954,8 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			} catch {
 				// 超时 / select 拒绝：都按切换失败播报（防御性 catch 同时杜绝
 				// unhandled rejection——未来注入面变更也不会让它漏出去）。
-				showToast(t("notice.selectFailed"));
+				// 组件已卸载时不再播报 Toast，避免在切到别的会话后突然冒出切换失败提示。
+				if (mountedRef.current) showToast(t("notice.selectFailed"));
 			} finally {
 				// 无论成功、失败还是超时都放行下一次选择：目录 pending 已清，UI 不再忙。
 				selectingRef.current = false;
