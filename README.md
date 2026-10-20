@@ -26,7 +26,7 @@
 - **内联推理滑杆**：Codex 式三段式布局，最高档呈现平滑蓝紫渐变与粒子效果。
 - **完整键盘导航**：方向键巡检、Enter 选中首项、Escape 快速清词，IME 输入无冲突。
 - **原生无缝集成**：纯前端组件，自动同步官方目录状态与会话，无需配置。
-- **稳定轻量**：独立合成层防抖防闪烁，121 项测试全绿保障。
+- **稳定轻量**：独立合成层防抖防闪烁，123 项测试全绿保障。
 
 ## 安装
 
@@ -60,7 +60,7 @@ dsh plugin --profile web add @bittersmilezzz/dsh-model-selector
 ```bash
 pnpm install
 pnpm typecheck          # 双 program 类型检查
-pnpm test               # 121 项自动化测试全绿
+pnpm test               # 123 项自动化测试全绿
 pnpm build              # 构建 lib 产物
 pnpm validate:registry  # 伞仓准入校验
 ```

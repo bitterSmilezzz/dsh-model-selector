@@ -98,7 +98,14 @@ export const CSS: string = `
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
+  /* 官方 --dsw-specific-menu 是「玻璃」色：非 macOS 只有 58%（浅色）/45%（深色）
+     不透明，必须靠 MenuSurface 的 backdrop blur 才不露出下层文字。本插件把菜单
+     portal 到 body，没有那层 material，于是 Web/Linux profile 下正文会直接透过
+     菜单（会话正文与模型行叠在一起）。这里把同一主题菜单色叠到不透明的
+     bg-layer-2 上：颜色仍是主题菜单色，但背景不再随下方内容变化。
+     内层浮层（status/more）和吸顶分组头继承同一个合成面，避免它们又透出列表行。 */
+  --dms-surface: linear-gradient(var(--dsw-specific-menu, transparent), var(--dsw-specific-menu, transparent)), var(--dsw-alias-bg-layer-2, #fff);
+  background: var(--dms-surface);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-primary);
   animation: dms-menu-in 150ms cubic-bezier(.22,1,.36,1);
@@ -140,7 +147,7 @@ export const CSS: string = `
   right: 4px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--dsw-specific-menu);
+  background: var(--dms-surface);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -157,7 +164,7 @@ export const CSS: string = `
   overflow-y: auto;
   padding: 8px 12px;
   border-radius: 8px;
-  background: var(--dsw-specific-menu);
+  background: var(--dms-surface);
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
@@ -280,7 +287,7 @@ export const CSS: string = `
   padding: 5px 8px 3px;
   border: none;
   outline: none;
-  background: var(--dsw-specific-menu);
+  background: var(--dms-surface);
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
