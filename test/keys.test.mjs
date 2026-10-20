@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { dmsMenuKeyAction, dmsNextRowIndex } from '../src/client/keys.ts'
+import { dmsMenuKeyAction, dmsNextRowIndex, dmsOnNonInput } from '../src/client/keys.ts'
 
 /** 默认输入：菜单开着、焦点在搜索框、有 3 行、命中 3 条。 */
 function input(overrides = {}) {
@@ -70,6 +70,24 @@ test('方向键：搜索框内或焦点不在 input 上时进列表，滑杆上�
     dmsMenuKeyAction(input({ key: 'ArrowUp', fromSearch: false, onNonInput: false })),
     { type: 'none' },
   )
+})
+
+test('dmsOnNonInput：0.4.0 起滑杆是 div[role=slider]，与原生 input 一样自管方向键', () => {
+  // 回归：判据只按 HTMLInputElement 时，滑杆被当成「非输入控件」，
+  // ArrowUp/ArrowDown 被菜单抢去移焦点、Home/End 跳首末行（实机可复现）。
+  assert.equal(dmsOnNonInput({ isNativeInput: true, inEffortSlider: false }), false, '原生 input')
+  assert.equal(dmsOnNonInput({ isNativeInput: false, inEffortSlider: true }), false, 'div 滑杆')
+  assert.equal(dmsOnNonInput({ isNativeInput: false, inEffortSlider: false }), true, '普通元素')
+})
+
+test('滑杆上的方向键与 Home/End 全部归滑杆，菜单不动焦点', () => {
+  for (const key of ['ArrowUp', 'ArrowDown', 'Home', 'End']) {
+    assert.deepEqual(
+      dmsMenuKeyAction(input({ key, fromSearch: false, onNonInput: false })),
+      { type: 'none' },
+      key,
+    )
+  }
 })
 
 test('方向键：无行可去时不吞键（搜索框里上下键仍可移光标）', () => {

@@ -47,7 +47,7 @@ import { dmsDefaultRowKey, dmsHeaderKey, dmsRowKey } from './roving.ts'
 // 全部抽成纯函数模块（node 可测），事件处理器只做 dispatch。
 import { dmsHaystack, dmsMenuEmptyState, dmsNormalizeQuery, dmsSearchHits } from './search.ts'
 import type { SearchChoice, SearchResult } from './search.ts'
-import { dmsMenuKeyAction, dmsNextRowIndex } from './keys.ts'
+import { dmsMenuKeyAction, dmsNextRowIndex, dmsOnNonInput } from './keys.ts'
 import { dmsTriggerCopy } from './copy.ts'
 // Type-only: the model catalog carrier types (moved here in dsh alpha.2).
 import type { ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -88,6 +88,8 @@ const MAX_VISIBLE_HITS = 100;
  * 必须释放滑杆的 committing 锁并回滚，否则滑杆被锁死到菜单关闭。
  * 调法：后端/网络慢时调大避免误回滚（滑杆锁死时间随之变长）；调小更早释放交互。 */
 const EFFORT_COMMIT_TIMEOUT_MS = 12e3;
+/** 一次性提示（如「已是当前模型」）的停留时长：到点自动收起，不长期遮挡列表。 */
+const NOTICE_TTL_MS = 4e3;
 // ── 推理强度滑块（档位随模型自动适配）──
 // 视觉对齐 Codex 的思考等级条：灰色圆角轨道 + 档位圆点 + 实心蓝填充 + 白色圆形滑块；
 // 只有最高档（Ultra/Max）用蓝紫渐变并在填充区内跑稀疏粒子（见 ./effortParticles.ts）。
@@ -511,6 +513,13 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 	const [query, setQuery] = react.useState("");
 	const [collapsed, setCollapsed] = react.useState<Set<string>>(() => new Set());
 	const [notice, setNotice] = react.useState<string | null>(null);
+	// 提示是一次性反馈：到点自动收起。此前只在下一次选择/清词/关闭时清除，
+	// 点一下当前模型后提示会一直挂在列表底部（并压住最后两行）。
+	react.useEffect(() => {
+		if (notice === null) return;
+		const timer = window.setTimeout(() => setNotice(null), NOTICE_TTL_MS);
+		return () => window.clearTimeout(timer);
+	}, [notice]);
 	// roving tabindex 的活动行键：全列表只有这一行 tabindex=0（其余 -1，仅方向键
 	// 可达），Tab 从搜索框进列表落在它上面。行焦点移动经 onRowFocus 更新；行集合
 	// 变化（打开/搜索/折叠/选中迁移）时由下方 effect 重置到默认落点。
@@ -701,10 +710,25 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 		gap: 8,
 		margin: MENU_VIEWPORT_MARGIN,
 	});
+	// 打开即聚焦搜索框：必须等 useAnchoredPosition 给出坐标之后。首帧菜单是
+	// visibility:hidden（避免从 (0,0) 闪一下），此时 focus() 在 Chromium 上是
+	// 空操作——实测焦点调用发生在 visibility=hidden、left=0px 的那一帧，焦点留在
+	// trigger 上，Tab 会直接离开并关闭菜单，键盘用户到不了搜索框与列表。
+	const focusedForOpenRef = react.useRef(false);
 	react.useEffect(() => {
-		if (!open) return;
+		if (!open) {
+			focusedForOpenRef.current = false;
+			return;
+		}
+		if (focusedForOpenRef.current || menuPos === null) return;
+		// 用户已用方向键进了菜单时不抢焦点。
+		if (menuRef.current?.contains(document.activeElement) === true) {
+			focusedForOpenRef.current = true;
+			return;
+		}
+		focusedForOpenRef.current = true;
 		searchRef.current?.focus();
-	}, [open]);
+	}, [open, menuPos]);
 	// 视口变化时释放高度锁，下一次交互重新按新尺寸锁定。
 	react.useEffect(() => {
 		if (!open) return;
@@ -949,7 +973,12 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 			// 「菜单内」= 菜单容器（搜索框/行/滑杆）；trigger 不算 —— 焦点在 trigger 上
 			// 按 Escape 应当直接关菜单，而不是被清词逻辑拽进搜索框。
 			inMenu: menuRef.current?.contains(document.activeElement) === true,
-			onNonInput: !(target instanceof HTMLInputElement),
+			// 滑杆是 div[role=slider]（0.4.0 起不再是原生 range input），只按
+			// HTMLInputElement 判会把它当成「非输入控件」，方向键被菜单抢去移焦点。
+			onNonInput: dmsOnNonInput({
+				isNativeInput: target instanceof HTMLInputElement,
+				inEffortSlider: target instanceof Element && target.closest('.dms-effort') !== null,
+			}),
 			hasQuery: query !== "",
 			rowCount: menuRef.current?.querySelectorAll('[data-row-key]').length ?? 0,
 			hitCount: hits?.items.length ?? 0,
@@ -1260,7 +1289,11 @@ export function ModelSelect({ locked, available, directory, load, select, t }: M
 					)}
 					{/* notice 容器常驻（空时 :empty 隐藏）：插入式 live region 的首次播报
 					    在各 AT 上不可靠，「已是当前模型」这类反馈只有这一条通道。 */}
-					<div className="dms-notice" role="status">{notice ?? ''}</div>
+					{/* 视觉卡片与播报节点分离：卡片用 :empty 收起（display:none 会把它从
+					    无障碍树摘掉，从 display:none 变可见的插入式 live region 在部分 AT
+					    上不播报），播报改走常驻的 clip 式 .dms-sr 容器。 */}
+					<div className="dms-notice" aria-hidden="true">{notice ?? ''}</div>
+					<span className="dms-sr" role="status">{notice ?? ''}</span>
 				</div>
 			), document.body) : null}
 			{toast !== null && (

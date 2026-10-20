@@ -7,6 +7,20 @@
  * 只能靠浏览器手测。事件处理器只做 dispatch，分支判定全在这里。
  */
 
+/**
+ * 焦点所在的控件是否自己消费方向键/Home/End。
+ *
+ * 判据不能只看「是不是 HTMLInputElement」：0.4.0 把原生 `<input type=range>`
+ * 换成 `div[role=slider]` 之后，滑杆已不是 input，若仍按 input 判据，滑杆上的
+ * ArrowUp/ArrowDown 会被菜单当成「进列表」而把焦点抢走、Home/End 会跳首末行
+ * （实机可复现）。因此调用方把「焦点在滑杆内」显式传进来，这里统一收敛。
+ * @param target - 焦点目标的两个事实：是否原生 input、是否在 effort 滑杆内。
+ * @returns true 表示按键归该控件，菜单不得劫持。
+ */
+export function dmsOnNonInput(target: { isNativeInput: boolean; inEffortSlider: boolean }): boolean {
+  return !target.isNativeInput && !target.inEffortSlider
+}
+
 /** 键盘事件归一化后的输入面。 */
 export interface MenuKeyInput {
   /** event.key（按原样比较，不做大小写归一）。 */
@@ -23,7 +37,7 @@ export interface MenuKeyInput {
   fromSearch: boolean
   /** 焦点是否在菜单容器内（搜索框/行/滑杆；trigger 不算）。 */
   inMenu: boolean
-  /** 焦点是否不在任何 input 上（range 滑杆也是 input，方向键归它调档）。 */
+  /** 焦点是否不在任何自管按键的控件上（原生 input / effort 滑杆；方向键归它们调档）。 */
   onNonInput: boolean
   /** 搜索词是否非空。 */
   hasQuery: boolean
@@ -60,7 +74,8 @@ export function dmsMenuKeyAction(input: MenuKeyInput): MenuKeyAction {
   if (!open) return { type: 'none' }
   if ((key === 'ArrowDown' || key === 'ArrowUp') && (onNonInput || fromSearch)) {
     // 搜索框自动聚焦后，方向键原本只在输入框内移光标（键盘导航死路）；现在
-    // 搜索框内的上下键也进入结果列表。滑杆（input）上的方向键不劫持 —— 那是调档键。
+    // 搜索框内的上下键也进入结果列表。滑杆上的方向键不劫持 —— 那是调档键
+    // （调用方经 dmsOnNonInput 把滑杆折算成 false，不能只按 input 判据）。
     if (rowCount === 0) return { type: 'none' }
     return { type: 'moveFocus', offset: key === 'ArrowDown' ? 1 : -1 }
   }

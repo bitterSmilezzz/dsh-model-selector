@@ -320,8 +320,10 @@ export const CSS: string = `
 /* 不透明浮层：提示压在模型列表行之上，此前用 hover tint（6%~8% alpha）作底、
    secondary 作字色，菜单表面 / 列表行 / 提示三层文字互相透出，无法辨认。
    底色改用实色 overlay 面，加描边与投影分隔，文字提到 label-primary。 */
+/* 提示卡只读：不拦截指针，避免压住的两行模型点不到。 */
 .dms-notice {
   position: absolute;
+  pointer-events: none;
   z-index: 7;
   left: 4px;
   right: 4px;
