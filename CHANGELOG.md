@@ -10,6 +10,11 @@
 
 ### 修复
 
+- **整个菜单面板彻底改为 100% 实色不透明底面**：此前 `.dms-menu` 使用 `--dsw-specific-menu`
+  （带有 6% 透明度），当浮在会话列表、文本或「探索未至之境」等底层文字上方时，文字会透过菜单透出。
+  现将 `.dms-menu`、`.dms-status`、`.dms-more`、`.dms-groupHeader` 的底色统一改为实色
+  `--dsw-alias-bg-layer-1`（浅色 `#ffffff` / 深色 `rgb(35,35,36)`，alpha = 1.0），并显式
+  指定 `backdrop-filter: none`，彻底杜绝任何底层透字和文字重叠。
 - **「已是当前模型」提示改为不透明浮层**：此前该提示用
   `--dsw-alias-interactive-bg-hover`（浅色 6% / 深色 8% alpha）作底、配
   `--dsw-alias-label-secondary` 字色，压在模型列表行上时，菜单表面、列表行文字与

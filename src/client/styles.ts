@@ -98,7 +98,9 @@ export const CSS: string = `
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
+  /* 实色不透明底面：消除半透明与 backdrop-filter 导致的底层文字透出和重叠叠字。 */
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  backdrop-filter: none;
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-primary);
   animation: dms-menu-in 150ms cubic-bezier(.22,1,.36,1);
@@ -140,7 +142,7 @@ export const CSS: string = `
   right: 4px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--dsw-specific-menu);
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -157,7 +159,7 @@ export const CSS: string = `
   overflow-y: auto;
   padding: 8px 12px;
   border-radius: 8px;
-  background: var(--dsw-specific-menu);
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
@@ -280,7 +282,7 @@ export const CSS: string = `
   padding: 5px 8px 3px;
   border: none;
   outline: none;
-  background: var(--dsw-specific-menu);
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
